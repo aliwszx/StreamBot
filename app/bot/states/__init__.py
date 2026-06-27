@@ -5,6 +5,7 @@ from app.bot.states.states import (
     AdminAddStream,
     AdminDeleteStream,
     AdminBroadcast,
+    AdminScrapeURL,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "AdminAddStream",
     "AdminDeleteStream",
     "AdminBroadcast",
+    "AdminScrapeURL",
 ]
