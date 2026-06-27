@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
 import pathlib
 
 from aiogram import Bot, Dispatcher
@@ -20,14 +18,12 @@ WEBAPP_DIR = pathlib.Path(__file__).parent / "webapp"
 PLAYER_HTML = WEBAPP_DIR / "player.html"
 
 
-# ── WebApp route ──────────────────────────────────────────────
+# ── WebApp routes ─────────────────────────────────────────────
 
 async def handle_player(request: web.Request) -> web.Response:
     """Telegram Mini App video player səhifəsi."""
     try:
         content = PLAYER_HTML.read_text(encoding="utf-8")
-        # Mini App nisbi URL-ləri telegram.org-a göndərir — mütləq URL lazımdır.
-        # Serverin öz origin-ini inject edirik ki, /resolve düzgün çağırılsın.
         base_url = str(request.url.origin())
         content = content.replace(
             "const BASE_URL = '';",
@@ -46,57 +42,30 @@ async def handle_player(request: web.Request) -> web.Response:
         return web.Response(text="Player not found", status=404)
 
 
-
-async def handle_playwright_status(request: web.Request) -> web.Response:
-    """Playwright quraşdırılıb-quraşdırılmadığını yoxla."""
-    try:
-        from playwright.async_api import async_playwright
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True, args=["--no-sandbox","--disable-dev-shm-usage"])
-            await browser.close()
-        return web.json_response({"status": "ok", "playwright": "ready"})
-    except ImportError:
-        return web.json_response({"status": "error", "playwright": "not installed"}, status=500)
-    except Exception as exc:
-        return web.json_response({"status": "error", "detail": str(exc)}, status=500)
-
 async def handle_resolve(request: web.Request) -> web.Response:
     """
-    Canlı resolve endpoint.
+    Canlı m3u8 resolve endpoint.
 
     Player hər izləmədə bu endpoint-i çağırır:
-      GET /resolve?page=<url>
+      GET /resolve?page=<sinekfilmizle_url>
 
     Cavab:
-      {
-        "sources": [
-          {"video": "...m3u8", "audio": "...m3u8", "quality": "1080p"},
-          {"video": "...m3u8", "quality": "720p"}
-        ]
-      }
-
-    audio sahəsi yalnız video və audio ayrı m3u8-dirsə olur.
+      {"sources": [{"video": "...m3u8", "quality": "HD"}, ...]}
     """
     page_url = request.query.get("page", "").strip()
     if not page_url or not page_url.startswith("http"):
         return web.json_response({"error": "invalid page url"}, status=400)
 
-    from app.services.scraper.sinekfilmizle import SinekfilmizleScraper
+    from app.services.resolver import resolve
 
     logger.info("Resolve başladı", url=page_url)
-    sources = await SinekfilmizleScraper.resolve_live(page_url)
-    logger.info("Resolve tamamlandı", url=page_url, sources_found=len(sources))
+    streams = await resolve(page_url)
+    logger.info("Resolve tamamlandı", url=page_url, count=len(streams))
 
-    if not sources:
+    if not streams:
         return web.json_response({"error": "no sources found"}, status=502)
 
-    result = []
-    for src in sources:
-        entry: dict = {"video": src.video_url, "quality": src.quality}
-        if src.audio_url:
-            entry["audio"] = src.audio_url
-        result.append(entry)
-
+    result = [{"video": s.url, "quality": s.quality} for s in streams]
     return web.json_response(
         {"sources": result},
         headers={"Cache-Control": "no-store"},
@@ -139,7 +108,6 @@ def run_polling(bot: Bot, dp: Dispatcher) -> None:
             app = web.Application()
             app.router.add_get("/player", handle_player)
             app.router.add_get("/resolve", handle_resolve)
-            app.router.add_get("/playwright-status", handle_playwright_status)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, "0.0.0.0", settings.port)
@@ -166,7 +134,6 @@ def run_webhook(bot: Bot, dp: Dispatcher) -> None:
 
     app.router.add_get("/player", handle_player)
     app.router.add_get("/resolve", handle_resolve)
-    app.router.add_get("/playwright-status", handle_playwright_status)
 
     handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     handler.register(app, path=settings.webhook_path)

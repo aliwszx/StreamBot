@@ -144,6 +144,43 @@ def streams_keyboard(
     return builder.as_markup()
 
 
+def live_streams_keyboard(
+    streams: list,   # List[ResolvedStream] from resolver
+    item_id: int,
+    lang: str = "en",
+    item_title: str = "",
+) -> InlineKeyboardMarkup:
+    """
+    Canlı resolver-dən gələn ResolvedStream-lər üçün keyboard.
+    """
+    builder = InlineKeyboardBuilder()
+    base_url = (settings.webapp_base_url or "").rstrip("/")
+
+    if base_url and streams:
+        streams_data = [{"url": s.url, "quality": s.quality} for s in streams]
+        encoded_streams = urllib.parse.quote(json.dumps(streams_data))
+        encoded_title = urllib.parse.quote(item_title or "Video")
+        first = streams[0]
+        player_url = (
+            f"{base_url}/player"
+            f"?title={encoded_title}"
+            f"&streams={encoded_streams}"
+            f"&url={urllib.parse.quote(first.url)}"
+            f"&quality={urllib.parse.quote(first.quality)}"
+        )
+        builder.button(
+            text="▶️ Videoya bax",
+            web_app=WebAppInfo(url=player_url),
+        )
+    else:
+        for s in streams:
+            builder.button(text=f"[{s.quality}] 🔗", url=s.url)
+
+    builder.row(InlineKeyboardButton(text=t("back", lang), callback_data=f"item:{item_id}"))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 # ─────────────────────────── Favorites / History ──────────────
 
 def items_list_keyboard(
@@ -165,7 +202,7 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="➕ Add Item", callback_data="admin:add_item")
     builder.button(text="➕ Add Stream", callback_data="admin:add_stream")
     builder.button(text="🗑 Delete Stream", callback_data="admin:delete_stream")
-    builder.button(text="🔗 Scrape URL", callback_data="admin:scrape_url")
+    builder.button(text="🔗 Film URL Əlavə Et", callback_data="admin:scrape_url")
     builder.button(text="👥 Users", callback_data="admin:users")
     builder.button(text="📢 Broadcast", callback_data="admin:broadcast")
     builder.adjust(2)

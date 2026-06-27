@@ -124,6 +124,7 @@ async def create_item(
     description: str,
     category_id: int,
     image: Optional[str] = None,
+    source_url: Optional[str] = None,
 ) -> Item:
     db = await get_client()
     now = datetime.utcnow().isoformat()
@@ -133,6 +134,7 @@ async def create_item(
             "description": description,
             "category_id": category_id,
             "image": image,
+            "source_url": source_url,
             "created_at": now,
         }
     ).execute()

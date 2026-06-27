@@ -76,7 +76,134 @@ async def admin_category_slug(message: Message, state: FSMContext) -> None:
     )
 
 
-# ─────────────────────────── Add Item ─────────────────────────
+# ─────────────────────────── Add Item (URL ilə) ───────────────
+#
+# Admin "➕ Film Əlavə Et (URL)" düyməsinə basdıqda:
+# 1. sinekfilmizle.com URL-i soruşur
+# 2. Film adı soruşur (və ya /skip deyib saytdan otomatik çəkməyə buraxır)
+# 3. Kateqoriya seçir
+# 4. Items DB-ə əlavə edilir; stream SAXLANMIR — hər izləmədə canlı tapılır
+#
+
+@router.callback_query(F.data == "admin:scrape_url")
+async def cb_add_url_start(call: CallbackQuery, state: FSMContext) -> None:
+    if not is_admin(call.from_user.id):
+        return await call.answer(t("not_admin"))
+    await state.set_state(AdminScrapeURL.url)
+    await call.message.edit_text(
+        "🔗 <b>Film URL-i Əlavə Et</b>\n\n"
+        "sinekfilmizle.com film/serial səhifəsinin URL-ini göndərin.\n"
+        "Bot istifadəçi izləmək istədikdə m3u8-i <b>canlı</b> tapacaq.\n\n"
+        "Nümunə:\n"
+        "<code>https://sinekfilmizle.com/yenilmez-undisputed-2002-izle/</code>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(AdminScrapeURL.url)
+async def admin_url_received(message: Message, state: FSMContext) -> None:
+    if not is_admin(message.from_user.id):
+        return
+
+    url = message.text.strip() if message.text else ""
+    if not url.startswith("http"):
+        await message.answer("❌ Yanlış URL. http/https ilə başlamalıdır.")
+        return
+
+    await state.update_data(url=url)
+    await state.set_state(AdminScrapeURL.category)
+
+    # Film adını saytdan otomatik çəkməyə çalış
+    await message.answer("⏳ Saytdan film adı oxunur...")
+    title = await _fetch_title(url)
+
+    if title:
+        await state.update_data(title=title)
+        await message.answer(
+            f"✅ Film adı tapıldı: <b>{title}</b>\n\n"
+            "Dəyişdirmək istəyirsənsə yeni ad göndər, ya da /skip yaz.",
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer(
+            "Film adı tapılmadı. Zəhmət olmasa əl ilə daxil edin:"
+        )
+
+
+@router.message(AdminScrapeURL.category)
+async def admin_url_title_override(message: Message, state: FSMContext) -> None:
+    """İstifadəçi film adını əl ilə daxil etdikdə və ya /skip yazdıqda."""
+    if not is_admin(message.from_user.id):
+        return
+    text = message.text.strip() if message.text else ""
+    if text != "/skip":
+        await state.update_data(title=text)
+
+    data = await state.get_data()
+    if not data.get("title"):
+        await message.answer("❌ Film adı lazımdır. Zəhmət olmasa daxil edin:")
+        return
+
+    cats = await queries.get_categories()
+    if not cats:
+        await message.answer("❌ Kateqoriya yoxdur. Əvvəl kateqoriya əlavə edin.")
+        await state.clear()
+        return
+
+    await message.answer(
+        "📂 Hansı kateqoriyaya əlavə edim?",
+        reply_markup=admin_category_select_keyboard(cats),
+    )
+
+
+@router.callback_query(F.data.startswith("adm_cat:"), AdminScrapeURL.category)
+async def admin_url_save(call: CallbackQuery, state: FSMContext) -> None:
+    """Kateqoriya seçildikdən sonra filmi DB-ə əlavə edir."""
+    cat_id = int(call.data.split(":")[1])
+    data = await state.get_data()
+    url = data.get("url", "")
+    title = data.get("title", "")
+
+    await state.clear()
+
+    # Eyni title varsa yenilə, yoxdursa əlavə et
+    existing = await queries.search_items(title, limit=1)
+    item_exists = [i for i in existing if i.title.lower() == title.lower()]
+
+    if item_exists:
+        item = item_exists[0]
+        # source_url-i yenilə
+        from app.database.supabase import get_client as _get_client
+        db = await _get_client()
+        await db.table("items").update({"source_url": url}).eq("id", item.id).execute()
+        await call.message.edit_text(
+            f"♻️ <b>Mövcud film yeniləndi!</b>\n\n"
+            f"📌 Film: <b>{item.title}</b>\n"
+            f"🔗 URL yeniləndi.\n\n"
+            f"İstifadəçilər filmi izləmək istədikdə m3u8 canlı tapılacaq.",
+            parse_mode="HTML",
+            reply_markup=admin_panel_keyboard(),
+        )
+        return
+
+    item = await queries.create_item(
+        title=title,
+        description="",
+        category_id=cat_id,
+        source_url=url,
+    )
+
+    await call.message.edit_text(
+        f"✅ <b>Film əlavə edildi!</b>\n\n"
+        f"📌 Ad: <b>{item.title}</b>\n"
+        f"🔗 URL: <code>{url}</code>\n\n"
+        f"İstifadəçilər izləmək istədikdə bot m3u8-i canlı tapacaq.",
+        parse_mode="HTML",
+        reply_markup=admin_panel_keyboard(),
+    )
+
+
+# ─────────────────────────── Add Item (manual) ────────────────
 
 @router.callback_query(F.data == "admin:add_item")
 async def cb_add_item_start(call: CallbackQuery, state: FSMContext) -> None:
@@ -136,7 +263,7 @@ async def admin_item_category(call: CallbackQuery, state: FSMContext) -> None:
     )
 
 
-# ─────────────────────────── Add Stream ───────────────────────
+# ─────────────────────────── Add Stream (manual) ──────────────
 
 @router.callback_query(F.data == "admin:add_stream")
 async def cb_add_stream_start(call: CallbackQuery, state: FSMContext) -> None:
@@ -244,7 +371,7 @@ async def cb_admin_users(call: CallbackQuery) -> None:
     )
 
 
-# ─────────────────────────── Broadcast ───────────────────────
+# ─────────────────────────── Broadcast ────────────────────────
 
 @router.callback_query(F.data == "admin:broadcast")
 async def cb_broadcast_start(call: CallbackQuery, state: FSMContext) -> None:
@@ -270,108 +397,32 @@ async def admin_broadcast_send(message: Message, state: FSMContext) -> None:
     await message.answer(t("broadcast_sent", count=sent), reply_markup=admin_panel_keyboard())
 
 
-# ─────────────────────────── Scrape URL ───────────────────────
+# ─────────────────────────── Helpers ──────────────────────────
 
-@router.callback_query(F.data == "admin:scrape_url")
-async def cb_scrape_url_start(call: CallbackQuery, state: FSMContext) -> None:
-    if not is_admin(call.from_user.id):
-        return await call.answer(t("not_admin"))
-    await state.set_state(AdminScrapeURL.url)
-    await call.message.edit_text(
-        "🔗 <b>Sayt URL-i Scrape Et</b>\n\n"
-        "Film və ya serial səhifəsinin URL-ini göndərin.\n"
-        "Bot özü m3u8 resurslarını tapacaq.\n\n"
-        "Nümunə:\n"
-        "<code>https://sinekfilmizle.com/suc-101-crime-101-2026-izle-047/</code>",
-        parse_mode="HTML",
-    )
-
-
-@router.message(AdminScrapeURL.url)
-async def admin_scrape_url_received(message: Message, state: FSMContext) -> None:
-    if not is_admin(message.from_user.id):
-        return
-
-    url = message.text.strip() if message.text else ""
-    if not url.startswith("http"):
-        await message.answer("❌ Yanlış URL. http/https ilə başlamalıdır.")
-        return
-
-    await state.update_data(url=url)
-
-    cats = await queries.get_categories()
-    if not cats:
-        await message.answer("❌ Kateqoriya yoxdur. Əvvəl kateqoriya əlavə edin.")
-        await state.clear()
-        return
-
-    await state.set_state(AdminScrapeURL.category)
-    await message.answer(
-        "📂 Hansı kateqoriyaya saxlayım?",
-        reply_markup=admin_category_select_keyboard(cats),
-    )
-
-
-@router.callback_query(F.data.startswith("adm_cat:"), AdminScrapeURL.category)
-async def admin_scrape_run(call: CallbackQuery, state: FSMContext) -> None:
-    from app.services.scraper.sinekfilmizle import SinekfilmizleScraper
-
-    cat_id = int(call.data.split(":")[1])
-    data = await state.get_data()
-    url = data.get("url", "")
-
-    await state.clear()
-    await call.message.edit_text(
-        f"⏳ Scraping edilir...\n<code>{url}</code>",
-        parse_mode="HTML",
-    )
-
-    scraper = SinekfilmizleScraper(page_url=url)
+async def _fetch_title(url: str) -> str:
+    """sinekfilmizle.com səhifəsindən film adını oxuyur."""
+    import aiohttp
+    from bs4 import BeautifulSoup
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "tr-TR,tr;q=0.9",
+        "Accept-Encoding": "gzip, deflate",
+    }
     try:
-        streams = await scraper.scrape()
-    finally:
-        await scraper.close()
-
-    if not streams:
-        await call.message.edit_text(
-            "❌ Stream tapılmadı.\n\n"
-            "Mümkün səbəblər:\n"
-            "• Sayt JavaScript render edir (Playwright lazımdır)\n"
-            "• Embed URL struktur dəyişib\n"
-            "• Anti-bot qoruması var\n\n"
-            "Admin panelə qayıt və manual stream əlavə et.",
-            reply_markup=admin_panel_keyboard(),
-        )
-        return
-
-    first = streams[0]
-
-    existing = await queries.search_items(first.title, limit=1)
-    if existing:
-        item = existing[0]
-        await queries.delete_streams_by_item(item.id)
-    else:
-        item = await queries.create_item(
-            title=first.title,
-            description=first.description,
-            category_id=cat_id,
-            image=first.image,
-        )
-
-    saved = 0
-    for s in streams:
-        try:
-            await queries.create_stream(item_id=item.id, url=s.url, quality=s.quality)
-            saved += 1
-        except Exception as exc:
-            logger.warning("Stream saxlanmadı", quality=s.quality, error=str(exc))
-
-    qualities = ", ".join(s.quality for s in streams)
-    await call.message.edit_text(
-        f"✅ <b>Tamamlandı!</b>\n\n"
-        f"📌 Film: <b>{first.title}</b>\n"
-        f"🎬 Saxlanan stream: <b>{saved}</b>\n"
-        f"📺 Keyfiyyətlər: <code>{qualities}</code>",
-        parse_mode="HTML",
-        reply_markup=admin_panel_keyboard(),
-    )
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                html = await resp.text(errors="replace")
+        soup = BeautifulSoup(html, "lxml")
+        og = soup.find("meta", property="og:title")
+        if og and og.get("content"):
+            return og["content"].strip()
+        h1 = soup.find("h1")
+        if h1:
+            return h1.get_text(strip=True)
+    except Exception as exc:
+        logger.warning("Title fetch failed", url=url, error=str(exc))
+    return ""

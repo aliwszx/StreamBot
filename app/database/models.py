@@ -32,6 +32,7 @@ class Item(BaseModel):
     description: Optional[str] = None
     category_id: int
     image: Optional[str] = None
+    source_url: Optional[str] = None   # sinekfilmizle.com film səhifəsinin URL-i
     created_at: datetime
 
     class Config:

@@ -28,8 +28,12 @@ CREATE TABLE IF NOT EXISTS items (
     description TEXT,
     category_id BIGINT      NOT NULL REFERENCES categories (id) ON DELETE CASCADE,
     image       TEXT,
+    source_url  TEXT,                   -- sinekfilmizle.com film/serial səhifəsinin URL-i
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migration: mövcud bazaya source_url əlavə etmək üçün bu sətri işlət:
+-- ALTER TABLE items ADD COLUMN IF NOT EXISTS source_url TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_items_category_id ON items (category_id);
 CREATE INDEX IF NOT EXISTS idx_items_title       ON items USING gin(to_tsvector('english', title));

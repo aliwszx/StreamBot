@@ -12,6 +12,7 @@ from app.bot.keyboards import (
     items_keyboard,
     item_detail_keyboard,
     streams_keyboard,
+    live_streams_keyboard,
 )
 from app.config import settings
 from app.utils.i18n import t
@@ -119,14 +120,45 @@ async def cb_streams(call: CallbackQuery, db_user: User | None) -> None:
     await call.answer()
     lang = db_user.language if db_user else "en"
     item_id = int(call.data.split(":")[1])
+
+    item = await queries.get_item_by_id(item_id)
+    if not item:
+        await call.message.edit_text(t("no_results", lang))
+        return
+
+    # Əgər source_url varsa — canlı resolve et
+    if item.source_url:
+        await call.message.edit_text("⏳ Video linki tapılır...")
+        from app.services.resolver import resolve
+        live_streams = await resolve(item.source_url)
+
+        if live_streams:
+            await call.message.edit_text(
+                t("select_stream", lang),
+                reply_markup=live_streams_keyboard(live_streams, item_id, lang, item_title=item.title),
+            )
+            return
+        else:
+            # Canlı link tapılmadı — manual stream-lər varsa onları göstər
+            streams = await queries.get_streams_by_item(item_id)
+            if streams:
+                await call.message.edit_text(
+                    t("select_stream", lang),
+                    reply_markup=streams_keyboard(streams, item_id, lang, item_title=item.title),
+                )
+                return
+            await call.message.edit_text(
+                "❌ Video linki tapılmadı. Sayt dəyişmiş ola bilər.",
+                reply_markup=item_detail_keyboard(item_id, False, lang),
+            )
+            return
+
+    # source_url yoxdur — köhnə üsul: DB-dən stream-lər
     streams = await queries.get_streams_by_item(item_id)
     if not streams:
         await call.message.edit_text(t("no_streams", lang))
         return
-    # Fetch item title so the player page can display it
-    item = await queries.get_item_by_id(item_id)
-    item_title = item.title if item else ""
     await call.message.edit_text(
         t("select_stream", lang),
-        reply_markup=streams_keyboard(streams, item_id, lang, item_title=item_title),
+        reply_markup=streams_keyboard(streams, item_id, lang, item_title=item.title),
     )
