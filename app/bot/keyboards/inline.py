@@ -165,6 +165,7 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="➕ Add Item", callback_data="admin:add_item")
     builder.button(text="➕ Add Stream", callback_data="admin:add_stream")
     builder.button(text="🗑 Delete Stream", callback_data="admin:delete_stream")
+    builder.button(text="🔗 Scrape URL", callback_data="admin:scrape_url")
     builder.button(text="👥 Users", callback_data="admin:users")
     builder.button(text="📢 Broadcast", callback_data="admin:broadcast")
     builder.adjust(2)
