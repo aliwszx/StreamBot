@@ -250,13 +250,28 @@ def _extract_p2turk_id_from_html(html: str) -> Optional[str]:
 
 def _build_p2turk_urls(video_id: str) -> List[ResolvedStream]:
     """
-    p2turk video ID-dən fresh timestamp ilə m3u8 URL qurur.
+    p2turk video ID-dən fresh timestamp ilə m3u8 URL-lər qurur.
     ?v= parametri hər zaman current unix timestamp olur.
+    master.m3u8 + video/audio ayrı stream-lər qaytarılır.
     """
     ts = int(time.time())
-    master = f"https://p.2turk.xyz/videos/{video_id}/master.m3u8?v={ts}"
-    logger.info("p2turk m3u8 URL quruldu", video_id=video_id, url=master)
-    return [ResolvedStream(url=master, quality="HD")]
+    base = f"https://p.2turk.xyz/videos/{video_id}"
+
+    # master.m3u8 — bütün keyfiyyətləri özündə birləşdirir
+    master = f"{base}/master.m3u8?v={ts}"
+
+    # video + audio ayrı stream-lər (p2turk tipik struktur)
+    video_hd  = f"{base}/1080/video.m3u8?v={ts}"
+    audio_url = f"{base}/audio.m3u8?v={ts}"
+
+    logger.info("p2turk m3u8 URL-lər quruldu", video_id=video_id, master=master)
+
+    return [
+        # Birinci: master (unified) — ən çox uyğun gəlir
+        ResolvedStream(url=master, quality="HD"),
+        # İkinci: video+audio ayrı (dual stream) — master işləməzsə player keçər
+        ResolvedStream(url=video_hd, audio_url=audio_url, quality="1080p"),
+    ]
 
 
 # ── Generic embed resolver ────────────────────────────────────

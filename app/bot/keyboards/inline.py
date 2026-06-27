@@ -157,7 +157,14 @@ def live_streams_keyboard(
     base_url = (settings.webapp_base_url or "").rstrip("/")
 
     if base_url and streams:
-        streams_data = [{"url": s.url, "quality": s.quality} for s in streams]
+        streams_data = [
+            {
+                "url": s.url,
+                "quality": s.quality,
+                **({"audioUrl": s.audio_url} if getattr(s, "audio_url", None) else {}),
+            }
+            for s in streams
+        ]
         encoded_streams = urllib.parse.quote(json.dumps(streams_data))
         encoded_title = urllib.parse.quote(item_title or "Video")
         first = streams[0]
