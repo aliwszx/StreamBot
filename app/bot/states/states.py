@@ -30,3 +30,8 @@ class AdminDeleteStream(StatesGroup):
 
 class AdminBroadcast(StatesGroup):
     message = State()
+
+
+class AdminScrapeURL(StatesGroup):
+    url = State()
+    category = State()
