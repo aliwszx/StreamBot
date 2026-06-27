@@ -345,6 +345,9 @@ async def admin_scrape_run(call: CallbackQuery, state: FSMContext) -> None:
     if existing:
         item = existing[0]
         logger.info("Using existing item", id=item.id, title=item.title)
+        # Wipe old streams (they may hold stale/expired embed URLs from a
+        # previous scrape) so re-scraping always leaves a clean, fresh set.
+        await queries.delete_streams_by_item(item.id)
     else:
         item = await queries.create_item(
             title=first.title,
