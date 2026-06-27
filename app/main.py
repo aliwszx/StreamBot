@@ -96,16 +96,33 @@ async def handle_hls_proxy(request: web.Request) -> web.Response:
                 # m3u8 fayllarındakı nisbi URL-ləri proxy URL-ə çevir
                 if "mpegurl" in content_type or raw_url.endswith(".m3u8"):
                     text = body.decode("utf-8", errors="replace")
-                    from urllib.parse import urljoin
+                    from urllib.parse import urljoin, quote
+                    import re
+
+                    # #EXT-X-MEDIA, #EXT-X-KEY, #EXT-X-MAP, #EXT-X-I-FRAME-STREAM-INF
+                    # kimi tag-ların daxilindəki URI="..." atributu da nisbi ola bilər.
+                    # Əvvəlki versiya yalnız "#" ilə başlamayan sətirləri (variant/segment
+                    # URL-ləri) rewrite edirdi, tag-lar isə "#" ilə başladığı üçün ötürülürdü.
+                    # Nəticədə məsələn audio track-in URI-si proxy-ə yönləndirilmirdi və
+                    # brauzer onu birbaşa öz domenimizdən (server root-dan) çağırıb 404
+                    # alırdı (sonsuz təkrarlanan /playlist_xxxxx.m3u8 404-ləri buradan idi).
+                    uri_attr_re = re.compile(r'URI="([^"]+)"')
+
+                    def _rewrite_uri_attr(match: "re.Match[str]") -> str:
+                        abs_u = urljoin(raw_url, match.group(1))
+                        return f'URI="{base_url}/hls-proxy?url={quote(abs_u, safe="")}"'
+
                     lines = []
                     for line in text.splitlines():
                         stripped = line.strip()
                         if stripped and not stripped.startswith("#"):
                             # URL-dir — proxy-dən keçir
                             abs_url = urljoin(raw_url, stripped)
-                            from urllib.parse import quote
                             proxied = f"{base_url}/hls-proxy?url={quote(abs_url, safe='')}"
                             lines.append(proxied)
+                        elif stripped.startswith("#") and 'URI="' in stripped:
+                            # tag daxilindəki URI="..." atributunu da proxy-ə çeviririk
+                            lines.append(uri_attr_re.sub(_rewrite_uri_attr, line))
                         else:
                             lines.append(line)
                     body = "\n".join(lines).encode("utf-8")
