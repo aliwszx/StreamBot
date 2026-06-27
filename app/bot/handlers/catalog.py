@@ -123,7 +123,10 @@ async def cb_streams(call: CallbackQuery, db_user: User | None) -> None:
     if not streams:
         await call.message.edit_text(t("no_streams", lang))
         return
+    # Fetch item title so the player page can display it
+    item = await queries.get_item_by_id(item_id)
+    item_title = item.title if item else ""
     await call.message.edit_text(
         t("select_stream", lang),
-        reply_markup=streams_keyboard(streams, item_id, lang),
+        reply_markup=streams_keyboard(streams, item_id, lang, item_title=item_title),
     )

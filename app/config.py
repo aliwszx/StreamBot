@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     webhook_path: str = "/webhook"
     port: int = 8000
 
+    # Telegram Mini App (WebApp)
+    # Set this to the public URL where your bot is hosted, e.g. https://mybot.onrender.com
+    # The player page will be served at <webapp_base_url>/player
+    webapp_base_url: str = ""
+
     # App
     log_level: str = "INFO"
     cache_ttl: int = 300          # seconds

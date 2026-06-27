@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import math
+import json
+import urllib.parse
 from typing import List
 
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.database.models import Category, Item, Stream
@@ -102,11 +104,41 @@ def item_detail_keyboard(
 # ─────────────────────────── Streams ──────────────────────────
 
 def streams_keyboard(
-    streams: List[Stream], item_id: int, lang: str = "en"
+    streams: List[Stream], item_id: int, lang: str = "en", item_title: str = ""
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for s in streams:
-        builder.button(text=f"[{s.quality}] 🔗", url=s.url)
+
+    base_url = (settings.webapp_base_url or "").rstrip("/")
+
+    if base_url:
+        # Build a single "▶ Videoya bax" WebApp button that opens the player
+        # and passes all streams as JSON so the user can switch quality inside the app.
+        streams_data = [{"url": s.url, "quality": s.quality} for s in streams]
+        encoded_streams = urllib.parse.quote(json.dumps(streams_data))
+        encoded_title   = urllib.parse.quote(item_title or "Video")
+
+        # Use the first stream as the default; the player lets user switch
+        first = streams[0] if streams else None
+        player_url = (
+            f"{base_url}/player"
+            f"?title={encoded_title}"
+            f"&streams={encoded_streams}"
+        )
+        if first:
+            player_url += (
+                f"&url={urllib.parse.quote(first.url)}"
+                f"&quality={urllib.parse.quote(first.quality)}"
+            )
+
+        builder.button(
+            text="▶️ Videoya bax",
+            web_app=WebAppInfo(url=player_url),
+        )
+    else:
+        # Fallback: direct URL buttons (original behaviour) when webapp_base_url not set
+        for s in streams:
+            builder.button(text=f"[{s.quality}] 🔗", url=s.url)
+
     builder.row(InlineKeyboardButton(text=t("back", lang), callback_data=f"item:{item_id}"))
     builder.adjust(1)
     return builder.as_markup()
