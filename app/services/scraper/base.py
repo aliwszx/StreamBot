@@ -42,7 +42,9 @@ class BaseScraper(abc.ABC):
                 ),
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Accept-Encoding": "gzip, deflate, br",
+                # Brotli (br) xaric — aiohttp Brotli paketi olmadan aça bilmir.
+                # Sayt br göndərərsə 400 xətası alırıq. gzip/deflate kifayətdir.
+                "Accept-Encoding": "gzip, deflate",
                 "DNT": "1",
                 "Connection": "keep-alive",
                 "Upgrade-Insecure-Requests": "1",
@@ -57,9 +59,13 @@ class BaseScraper(abc.ABC):
             return None
         session = await self._get_session()
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            async with session.get(
+                url,
+                timeout=aiohttp.ClientTimeout(total=20),
+                allow_redirects=True,
+            ) as resp:
                 resp.raise_for_status()
-                return await resp.text()
+                return await resp.text(errors="replace")
         except Exception as exc:
             logger.error("Fetch failed", url=url, error=str(exc), scraper=self.name)
             return None
