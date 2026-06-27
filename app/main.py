@@ -39,6 +39,30 @@ async def handle_player(request: web.Request) -> web.Response:
         return web.Response(text="Player not found", status=404)
 
 
+async def handle_resolve(request: web.Request) -> web.Response:
+    """
+    Live-resolve endpoint.
+
+    The player page calls this with `?page=<hdfilmizle page url>` right
+    before playback starts, so we always hand back a freshly-scraped
+    Vidrame embed URL instead of a possibly-expired cached one.
+    """
+    page_url = request.query.get("page", "").strip()
+    if not page_url or "hdfilmizle" not in page_url:
+        return web.json_response({"error": "invalid page url"}, status=400)
+
+    from app.services.scraper.hdfilmizle import HDFilmizleScraper
+
+    embed_url = await HDFilmizleScraper.resolve_embed_url(page_url)
+    if not embed_url:
+        return web.json_response({"error": "embed not found"}, status=502)
+
+    return web.json_response(
+        {"embed_url": embed_url},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 async def on_startup(bot: Bot) -> None:
     if settings.use_webhook:
         webhook_url = f"{settings.webhook_url}{settings.webhook_path}"
@@ -73,6 +97,7 @@ def run_polling(bot: Bot, dp: Dispatcher) -> None:
             # Run a minimal web server alongside polling so /player is reachable
             app = web.Application()
             app.router.add_get("/player", handle_player)
+            app.router.add_get("/resolve", handle_resolve)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, "0.0.0.0", settings.port)
@@ -100,6 +125,7 @@ def run_webhook(bot: Bot, dp: Dispatcher) -> None:
 
     # ── Telegram Mini App player page ──
     app.router.add_get("/player", handle_player)
+    app.router.add_get("/resolve", handle_resolve)
 
     handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     handler.register(app, path=settings.webhook_path)
