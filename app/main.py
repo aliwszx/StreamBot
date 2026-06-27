@@ -130,7 +130,7 @@ def run_polling(bot: Bot, dp: Dispatcher) -> None:
             app = web.Application()
             app.router.add_get("/player", handle_player)
             app.router.add_get("/resolve", handle_resolve)
-    app.router.add_get("/playwright-status", handle_playwright_status)
+            app.router.add_get("/playwright-status", handle_playwright_status)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, "0.0.0.0", settings.port)
