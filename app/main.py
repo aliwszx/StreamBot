@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import signal
-import sys
-from typing import Any
+import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
@@ -20,8 +18,13 @@ logger = get_logger(__name__)
 async def on_startup(bot: Bot) -> None:
     if settings.use_webhook:
         webhook_url = f"{settings.webhook_url}{settings.webhook_path}"
-        await bot.set_webhook(webhook_url)
-        logger.info("Webhook set", url=webhook_url)
+        await bot.set_webhook(
+            webhook_url,
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query", "inline_query"],
+        )
+        info = await bot.get_webhook_info()
+        logger.info("Webhook set", url=info.url, pending=info.pending_update_count)
     else:
         await bot.delete_webhook(drop_pending_updates=True)
         logger.info("Running in long-polling mode")
@@ -31,6 +34,7 @@ async def on_startup(bot: Bot) -> None:
 
 
 async def on_shutdown(bot: Bot) -> None:
+    logger.info("Shutting down...")
     await close_client()
     if settings.use_webhook:
         await bot.delete_webhook()
@@ -52,8 +56,14 @@ def run_polling(bot: Bot, dp: Dispatcher) -> None:
 def run_webhook(bot: Bot, dp: Dispatcher) -> None:
     app = web.Application()
 
-    dp.startup.register(lambda: on_startup(bot))
-    dp.shutdown.register(lambda: on_shutdown(bot))
+    async def _startup(app: web.Application) -> None:
+        await on_startup(bot)
+
+    async def _shutdown(app: web.Application) -> None:
+        await on_shutdown(bot)
+
+    app.on_startup.append(_startup)
+    app.on_shutdown.append(_shutdown)
 
     handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     handler.register(app, path=settings.webhook_path)
