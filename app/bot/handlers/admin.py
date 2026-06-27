@@ -10,7 +10,7 @@ from app.database import queries
 from app.database.models import User
 from app.bot.states import (
     AdminAddCategory, AdminAddItem, AdminAddStream,
-    AdminDeleteStream, AdminBroadcast,
+    AdminDeleteStream, AdminBroadcast, AdminScrapeURL,
 )
 from app.bot.keyboards import (
     admin_panel_keyboard,
@@ -268,3 +268,111 @@ async def admin_broadcast_send(message: Message, state: FSMContext) -> None:
             logger.warning("Broadcast failed for user", user_id=user.telegram_id, error=str(exc))
     await state.clear()
     await message.answer(t("broadcast_sent", count=sent), reply_markup=admin_panel_keyboard())
+
+
+# ─────────────────────────── Scrape URL ───────────────────────
+
+@router.callback_query(F.data == "admin:scrape_url")
+async def cb_scrape_url_start(call: CallbackQuery, state: FSMContext) -> None:
+    if not is_admin(call.from_user.id):
+        return await call.answer(t("not_admin"))
+    await state.set_state(AdminScrapeURL.url)
+    await call.message.edit_text(
+        "🔗 <b>Scrape URL</b>\n\n"
+        "Send me a <b>hdfilmizle.to</b> page URL to automatically extract all stream qualities.\n\n"
+        "Example:\n"
+        "<code>https://www.hdfilmizle.to/dizi/pluribus/sezon-1/bolum-1/</code>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(AdminScrapeURL.url)
+async def admin_scrape_url_received(message: Message, state: FSMContext) -> None:
+    if not is_admin(message.from_user.id):
+        return
+
+    url = message.text.strip()
+    if not url.startswith("http"):
+        await message.answer("❌ Invalid URL. Please send a valid http/https URL.")
+        return
+
+    await state.update_data(url=url)
+
+    # Ask which category to save under
+    cats = await queries.get_categories()
+    if not cats:
+        await message.answer("❌ No categories found. Please add a category first.")
+        await state.clear()
+        return
+
+    from app.bot.keyboards import admin_category_select_keyboard
+    await state.set_state(AdminScrapeURL.category)
+    await message.answer(
+        "📂 Select the category to save this content under:",
+        reply_markup=admin_category_select_keyboard(cats),
+    )
+
+
+@router.callback_query(F.data.startswith("adm_cat:"), AdminScrapeURL.category)
+async def admin_scrape_run(call: CallbackQuery, state: FSMContext) -> None:
+    from app.services.scraper.hdfilmizle import HDFilmizleScraper
+
+    cat_id = int(call.data.split(":")[1])
+    data = await state.get_data()
+    url = data.get("url", "")
+
+    await state.clear()
+    await call.message.edit_text(f"⏳ Scraping...\n<code>{url}</code>", parse_mode="HTML")
+
+    scraper = HDFilmizleScraper(page_url=url)
+    try:
+        streams = await scraper.scrape()
+    finally:
+        await scraper.close()
+
+    if not streams:
+        await call.message.edit_text(
+            "❌ No streams found. The page structure may have changed or Vidrame blocked the request.",
+            reply_markup=admin_panel_keyboard(),
+        )
+        return
+
+    # Use the first stream's metadata for the item
+    first = streams[0]
+
+    # Create or find item by title
+    existing = await queries.search_items(first.title, limit=1)
+    if existing:
+        item = existing[0]
+        logger.info("Using existing item", id=item.id, title=item.title)
+    else:
+        item = await queries.create_item(
+            title=first.title,
+            description=first.description,
+            category_id=cat_id,
+            image=first.image,
+        )
+        logger.info("Created new item", id=item.id, title=item.title)
+
+    # Save each quality stream
+    saved = 0
+    for s in streams:
+        try:
+            await queries.create_stream(
+                item_id=item.id,
+                url=s.url,
+                quality=s.quality,
+            )
+            saved += 1
+        except Exception as exc:
+            logger.warning("Failed to save stream", quality=s.quality, error=str(exc))
+
+    qualities = ", ".join(s.quality for s in streams)
+    await call.message.edit_text(
+        f"✅ <b>Done!</b>\n\n"
+        f"📌 Item: <b>{first.title}</b>\n"
+        f"🎬 Streams saved: <b>{saved}</b>\n"
+        f"📺 Qualities: <code>{qualities}</code>",
+        parse_mode="HTML",
+        reply_markup=admin_panel_keyboard(),
+    )
