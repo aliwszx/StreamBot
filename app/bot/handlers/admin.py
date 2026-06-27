@@ -92,10 +92,12 @@ async def cb_add_url_start(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminScrapeURL.url)
     await call.message.edit_text(
         "🔗 <b>Film URL-i Əlavə Et</b>\n\n"
-        "sinekfilmizle.com film/serial səhifəsinin URL-ini göndərin.\n"
-        "Bot istifadəçi izləmək istədikdə m3u8-i <b>canlı</b> tapacaq.\n\n"
-        "Nümunə:\n"
-        "<code>https://sinekfilmizle.com/yenilmez-undisputed-2002-izle/</code>",
+        "Aşağıdakı formatlardan birini göndərin:\n\n"
+        "<b>1. sinekfilmizle.com URL-i:</b>\n"
+        "<code>https://sinekfilmizle.com/yenilmez-undisputed-2002-izle/</code>\n\n"
+        "<b>2. p2turk video ID-si</b> (saytda şəbəkə trafikindən görünür):\n"
+        "<code>p2turk:Bno1xDl</code>\n\n"
+        "Bot istifadəçi izləmək istədikdə m3u8-i <b>canlı</b> tapacaq.",
         parse_mode="HTML",
     )
 
@@ -106,8 +108,12 @@ async def admin_url_received(message: Message, state: FSMContext) -> None:
         return
 
     url = message.text.strip() if message.text else ""
-    if not url.startswith("http"):
-        await message.answer("❌ Yanlış URL. http/https ilə başlamalıdır.")
+    if not (url.startswith("http") or url.startswith("p2turk:")):
+        await message.answer(
+            "❌ Yanlış format.\n"
+            "http/https URL və ya <code>p2turk:VIDEO_ID</code> formatında göndərin.",
+            parse_mode="HTML",
+        )
         return
 
     await state.update_data(url=url)
