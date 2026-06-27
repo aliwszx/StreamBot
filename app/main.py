@@ -39,6 +39,20 @@ async def handle_player(request: web.Request) -> web.Response:
         return web.Response(text="Player not found", status=404)
 
 
+
+async def handle_playwright_status(request: web.Request) -> web.Response:
+    """Playwright quraşdırılıb-quraşdırılmadığını yoxla."""
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True, args=["--no-sandbox","--disable-dev-shm-usage"])
+            await browser.close()
+        return web.json_response({"status": "ok", "playwright": "ready"})
+    except ImportError:
+        return web.json_response({"status": "error", "playwright": "not installed"}, status=500)
+    except Exception as exc:
+        return web.json_response({"status": "error", "detail": str(exc)}, status=500)
+
 async def handle_resolve(request: web.Request) -> web.Response:
     """
     Canlı resolve endpoint.
@@ -116,6 +130,7 @@ def run_polling(bot: Bot, dp: Dispatcher) -> None:
             app = web.Application()
             app.router.add_get("/player", handle_player)
             app.router.add_get("/resolve", handle_resolve)
+    app.router.add_get("/playwright-status", handle_playwright_status)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, "0.0.0.0", settings.port)
@@ -142,6 +157,7 @@ def run_webhook(bot: Bot, dp: Dispatcher) -> None:
 
     app.router.add_get("/player", handle_player)
     app.router.add_get("/resolve", handle_resolve)
+    app.router.add_get("/playwright-status", handle_playwright_status)
 
     handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     handler.register(app, path=settings.webhook_path)

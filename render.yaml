@@ -3,13 +3,15 @@ services:
     name: streambot
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: free           # change to starter/standard for production
-    region: frankfurt    # pick the closest region to your users
-    healthCheckPath: /   # aiohttp serves 404 on / which Render accepts
+    # Playwright Chromium üçün ən azı "starter" plan lazımdır (512MB RAM)
+    # Free plan yetərsizdir — Chromium 200-300MB RAM istifadə edir
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /
 
     envVars:
       - key: BOT_TOKEN
-        sync: false       # set via Render dashboard → Environment
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY
@@ -20,7 +22,7 @@ services:
         fromService:
           type: web
           name: streambot
-          property: host    # Render injects the public URL automatically
+          property: host
       - key: WEBHOOK_PATH
         value: /webhook
       - key: PORT
@@ -31,3 +33,6 @@ services:
         value: "300"
       - key: ITEMS_PER_PAGE
         value: "5"
+      # Playwright headless Chromium üçün
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /home/botuser/.cache/ms-playwright
