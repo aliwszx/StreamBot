@@ -299,7 +299,6 @@
 
     // Əgər live-resolve lazımdırsa (pageUrl verilmişsə)
     if (pageUrl && !streams.length) {
-      showLoading('Mənbədən stream alınır...');
       const liveSources = await fetchLiveSources(pageUrl);
       if (liveSources && liveSources.length) {
         streams = liveSources.map(s => ({
@@ -323,16 +322,173 @@
     loadStream(0);
   }
 
-  // ── Live resolve ──────────────────────────────────────────────
-  async function fetchLiveSources(url) {
+  // ── Live resolve — client-side scraping ──────────────────────
+  // Server (Render) IP-si bloklanır. Buna görə scraping-i
+  // birbaşa istifadəçinin brauzerindən edirik — real IP ilə.
+  async function fetchLiveSources(pageUrl) {
     try {
-      const resp = await fetch(BASE_URL + '/resolve?page=' + encodeURIComponent(url), { cache: 'no-store' });
-      const data = await resp.json();
-      if (!resp.ok || !data.sources) return null;
-      return data.sources; // [{video, audio?, quality}]
+      showLoading('Səhifə yüklənir...');
+
+      // 1. Əsas səhifəni CORS proxy vasitəsilə çək
+      const html = await fetchViaProxy(pageUrl);
+      if (!html) return null;
+
+      showLoading('Stream axtarılır...');
+
+      // 2. HTML-dən birbaşa m3u8 axtar
+      let sources = findM3u8InHtml(html);
+      if (sources.length) return sources;
+
+      // 3. iframe/embed URL-lərini tap
+      const embedUrls = findEmbedUrls(html, pageUrl);
+
+      // 4. Hər embed URL-ini resolve et
+      for (const embedUrl of embedUrls.slice(0, 5)) {
+        const embedHtml = await fetchViaProxy(embedUrl);
+        if (!embedHtml) continue;
+
+        sources = findM3u8InHtml(embedHtml);
+        if (sources.length) return sources;
+
+        sources = parsePlayerConfig(embedHtml);
+        if (sources.length) return sources;
+
+        // Bir səviyyə daha dərin
+        const nested = findEmbedUrls(embedHtml, embedUrl);
+        for (const nestedUrl of nested.slice(0, 3)) {
+          if (nestedUrl === embedUrl) continue;
+          const nestedHtml = await fetchViaProxy(nestedUrl);
+          if (!nestedHtml) continue;
+          sources = findM3u8InHtml(nestedHtml);
+          if (sources.length) return sources;
+          sources = parsePlayerConfig(nestedHtml);
+          if (sources.length) return sources;
+        }
+      }
+
+      return null;
     } catch(e) {
+      console.error('fetchLiveSources xətası:', e);
       return null;
     }
+  }
+
+  // CORS proxy siyahısı — birincisi uğursuz olarsa növbətisinə keçir
+  const CORS_PROXIES = [
+    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  ];
+
+  async function fetchViaProxy(url) {
+    for (const proxyFn of CORS_PROXIES) {
+      try {
+        const proxyUrl = proxyFn(url);
+        const resp = await fetch(proxyUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+          },
+          signal: AbortSignal.timeout(12000),
+        });
+        if (resp.ok) {
+          const text = await resp.text();
+          if (text && text.length > 100) return text;
+        }
+      } catch(e) {
+        console.warn('Proxy uğursuz:', e.message);
+      }
+    }
+    return null;
+  }
+
+  function findM3u8InHtml(html) {
+    const patterns = [
+      /(?:file|src|source|url)\s*[:=]\s*['"]( https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/gi,
+      /['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/gi,
+    ];
+    const found = new Set();
+    for (const pat of patterns) {
+      let m;
+      pat.lastIndex = 0;
+      while ((m = pat.exec(html)) !== null) {
+        found.add(m[1].trim());
+      }
+    }
+    return pairVideoAudio([...found]);
+  }
+
+  function findEmbedUrls(html, baseUrl) {
+    const urls = [];
+    const seen = new Set();
+
+    // iframe src
+    const iframePat = /<iframe[^>]+(?:src|data-src)\s*=\s*['"]([^'"]+)['"]/gi;
+    let m;
+    while ((m = iframePat.exec(html)) !== null) {
+      let src = m[1];
+      if (src.startsWith('//')) src = 'https:' + src;
+      if (src.startsWith('http') && !seen.has(src)) {
+        seen.add(src); urls.push(src);
+      }
+    }
+
+    // Script-lərdə embed URL-lər
+    const knownHosts = ['vidmoly','filemoon','doodstream','mixdrop','streamtape',
+                        'voe.sx','upstream','vudeo','player','embed','p2turk',
+                        'mcloud','rabbitstream','mycloud'];
+    const scriptPat = /['"](https?:\/\/[^'"]{10,})['"]/gi;
+    while ((m = scriptPat.exec(html)) !== null) {
+      const u = m[1];
+      if (knownHosts.some(h => u.includes(h)) && !seen.has(u)) {
+        seen.add(u); urls.push(u);
+      }
+    }
+
+    return urls;
+  }
+
+  function parsePlayerConfig(html) {
+    // JWPlayer
+    const jwMatch = html.match(/jwplayer\([^)]+\)\.setup\((\{[\s\S]*?\})\)/);
+    if (jwMatch) {
+      try {
+        const cfg = JSON.parse(jwMatch[1]);
+        const urls = (cfg.sources || [])
+          .filter(s => s.file && s.file.includes('.m3u8'))
+          .map(s => s.file);
+        if (urls.length) return pairVideoAudio(urls);
+      } catch(e) {}
+    }
+
+    // Generic file/url/src
+    const filePat = /(?:file|url|src)\s*:\s*['"]( https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/gi;
+    const found = new Set();
+    let m;
+    while ((m = filePat.exec(html)) !== null) found.add(m[1].trim());
+    return found.size ? pairVideoAudio([...found]) : [];
+  }
+
+  function pairVideoAudio(urls) {
+    if (!urls.length) return [];
+    const audioRe = /[-_\/](audio|sound|aac|ac3)[-_\/.]|f\d+-a\d+\.m3u8|\/a\.m3u8/i;
+    const audioUrls = urls.filter(u => audioRe.test(u));
+    const videoUrls = urls.filter(u => !audioRe.test(u));
+    const targets = videoUrls.length ? videoUrls : urls;
+    return targets.map(v => {
+      const base = v.rsplit ? v.rsplit('/', 1)[0] : v.substring(0, v.lastIndexOf('/'));
+      const audio = audioUrls.find(a => a.startsWith(base)) || (audioUrls.length === 1 ? audioUrls[0] : null);
+      return { video: v, audio: audio || undefined, quality: detectQuality(v) };
+    });
+  }
+
+  function detectQuality(url) {
+    const m = url.match(/(\d{3,4})[pP]/);
+    if (m) return m[1] + 'p';
+    if (/4k|2160/i.test(url)) return '4K';
+    if (url.includes('1080')) return '1080p';
+    if (url.includes('720')) return '720p';
+    if (url.includes('480')) return '480p';
+    return 'HD';
   }
 
   // ── Stream list render ────────────────────────────────────────
