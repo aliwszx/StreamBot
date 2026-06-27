@@ -292,6 +292,38 @@
   let hls = null;
   let audioHls = null;
   let currentIndex = 0;
+  let triedIndexes = new Set(); // sonsuz fallback dövrünün qarşısını almaq üçün
+
+  // ── Ardıcıl fallback — sonsuz dövr yaratmadan növbəti stream-ə keçir ──
+  function tryNextStream(failedIndex) {
+    triedIndexes.add(failedIndex);
+    let nextIdx = -1;
+    for (let i = 0; i < streams.length; i++) {
+      if (!triedIndexes.has(i)) { nextIdx = i; break; }
+    }
+    if (nextIdx === -1) {
+      showError('Heç bir stream yüklənmədi. Başqa keyfiyyət seçməyə cəhd edin.');
+      return;
+    }
+    triedIndexes.add(nextIdx);
+    currentIndex = nextIdx;
+
+    document.querySelectorAll('.stream-item').forEach((el, i) =>
+      el.classList.toggle('active', i === nextIdx));
+    if (streams[nextIdx]) {
+      qualityBadge.textContent = streams[nextIdx].quality;
+    }
+
+    showLoading('Alternativ stream cəhd edilir...');
+    destroyHls();
+
+    const next = streams[nextIdx];
+    if (next.audioUrl) {
+      loadDualStream(toProxyUrl(next.url), toProxyUrl(next.audioUrl), next.quality);
+    } else {
+      loadNative(toProxyUrl(next.url));
+    }
+  }
 
   // ── HLS Proxy — CORS problemini həll edir ────────────────────
   // p.2turk.xyz CORS header göndərmir. Buna görə bütün HLS URL-ləri
@@ -536,6 +568,7 @@
   // ── Load stream ───────────────────────────────────────────────
   function loadStream(index) {
     currentIndex = index;
+    triedIndexes = new Set([index]); // yeni manual seçim — fallback tarixçəsini sıfırla
     const s = streams[index];
     if (!s) return;
 
@@ -582,15 +615,9 @@
     });
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (data.fatal) {
-        console.warn('Dual stream video xəta, unified stream-ə keçir:', data.details);
+        console.warn('Dual stream video xəta, növbəti stream-ə keçir:', data.details);
         destroyHls();
-        // Dual stream uğursuz oldu — master stream-ə keçmeyi cəhd et
-        const master = streams.find(s => !s.audioUrl);
-        if (master) {
-          loadNative(toProxyUrl(master.url));
-        } else {
-          showError('Video stream yüklənmədi.');
-        }
+        tryNextStream(currentIndex);
       }
     });
   }
@@ -662,22 +689,14 @@
     if (oldAudio) { oldAudio.src = ''; oldAudio.remove(); }
 
     const isHls = url.includes('.m3u8') || url.includes('m3u8');
+    const failIdx = fallbackIndex !== undefined ? fallbackIndex : currentIndex;
 
-    // Xəta olduqda növbəti stream-ə keçmək funksiyası
+    // Xəta olduqda növbəti stream-ə keçmək — sonsuz dövrün qarşısını
+    // almaq üçün tryNextStream() istifadə edirik (artıq sınanmış index-lər
+    // triedIndexes-də saxlanılır, ona görə eyni stream ikinci dəfə yoxlanmır,
+    // və sınanmamış stream qalmayanda tryNextStream avtomatik showError çağırır)
     function onFatalError(msg) {
-      const nextIdx = (fallbackIndex !== undefined ? fallbackIndex : currentIndex) + 1;
-      if (nextIdx < streams.length) {
-        const next = streams[nextIdx];
-        showLoading('Alternativ stream cəhd edilir...');
-        destroyHls();
-        if (next.audioUrl) {
-          loadDualStream(toProxyUrl(next.url), toProxyUrl(next.audioUrl), next.quality);
-        } else {
-          loadNative(toProxyUrl(next.url), nextIdx);
-        }
-      } else {
-        showError(msg || 'HLS stream yüklənmədi.');
-      }
+      tryNextStream(failIdx);
     }
 
     if (isHls && Hls.isSupported()) {
