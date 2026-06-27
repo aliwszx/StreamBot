@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: streambot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free           # change to starter/standard for production
+    region: frankfurt    # pick the closest region to your users
+    healthCheckPath: /   # aiohttp serves 404 on / which Render accepts
+
+    envVars:
+      - key: BOT_TOKEN
+        sync: false       # set via Render dashboard → Environment
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: WEBHOOK_URL
+        fromService:
+          type: web
+          name: streambot
+          property: host    # Render injects the public URL automatically
+      - key: WEBHOOK_PATH
+        value: /webhook
+      - key: PORT
+        value: "8000"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CACHE_TTL
+        value: "300"
+      - key: ITEMS_PER_PAGE
+        value: "5"
