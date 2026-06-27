@@ -251,6 +251,10 @@
   </div>
 
 <script>
+  // ── Server base URL (main.py tərəfindən doldurulur) ───────────
+  // Mini App-də nisbi URL-lər telegram.org-a gedir, ona görə mütləq URL lazımdır.
+  const BASE_URL = '';
+
   // ── URL params ────────────────────────────────────────────────
   const params     = new URLSearchParams(location.search);
   const title      = decodeURIComponent(params.get('title') || 'Video');
@@ -322,7 +326,7 @@
   // ── Live resolve ──────────────────────────────────────────────
   async function fetchLiveSources(url) {
     try {
-      const resp = await fetch('/resolve?page=' + encodeURIComponent(url), { cache: 'no-store' });
+      const resp = await fetch(BASE_URL + '/resolve?page=' + encodeURIComponent(url), { cache: 'no-store' });
       const data = await resp.json();
       if (!resp.ok || !data.sources) return null;
       return data.sources; // [{video, audio?, quality}]

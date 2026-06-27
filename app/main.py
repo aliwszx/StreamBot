@@ -26,6 +26,13 @@ async def handle_player(request: web.Request) -> web.Response:
     """Telegram Mini App video player səhifəsi."""
     try:
         content = PLAYER_HTML.read_text(encoding="utf-8")
+        # Mini App nisbi URL-ləri telegram.org-a göndərir — mütləq URL lazımdır.
+        # Serverin öz origin-ini inject edirik ki, /resolve düzgün çağırılsın.
+        base_url = str(request.url.origin())
+        content = content.replace(
+            "const BASE_URL = '';",
+            f"const BASE_URL = '{base_url}';"
+        )
         return web.Response(
             text=content,
             content_type="text/html",

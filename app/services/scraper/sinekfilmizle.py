@@ -95,7 +95,8 @@ class SinekfilmizleScraper(BaseScraper):
         except ImportError:
             logger.warning("Playwright quraşdırılmayıb, fallback işlədilir")
         except Exception as exc:
-            logger.error("Playwright xətası", error=str(exc))
+            logger.error("Playwright xətası", error=str(exc), type=type(exc).__name__)
+            raise
 
         # aiohttp fallback
         scraper = cls(page_url=page_url)
@@ -127,6 +128,15 @@ class SinekfilmizleScraper(BaseScraper):
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
+                    # Render/Docker container mühiti üçün əlavə flag-lər
+                    "--single-process",
+                    "--no-zygote",
+                    "--disable-extensions",
+                    "--disable-software-rasterizer",
+                    "--disable-background-networking",
+                    "--disable-default-apps",
+                    "--mute-audio",
+                    "--hide-scrollbars",
                 ],
             )
             context = await browser.new_context(
@@ -250,6 +260,10 @@ class SinekfilmizleScraper(BaseScraper):
         return []
 
     async def _resolve_embed(self, embed_url: str) -> List[StreamSource]:
+        # p2turk üçün xüsusi yol
+        if "p2turk" in embed_url:
+            return await self._resolve_p2turk(embed_url)
+
         html = await self.fetch(embed_url)
         if not html:
             return []
@@ -260,11 +274,45 @@ class SinekfilmizleScraper(BaseScraper):
         if sources:
             return sources
         nested = self._find_embed_urls(html)
-        for nested_url in nested[:2]:
+        for nested_url in nested[:3]:  # 2-dən 3-ə artırıldı — daha dərin iç-içə embed-lər üçün
             if nested_url != embed_url:
                 s = await self._resolve_embed(nested_url)
                 if s:
                     return s
+        return []
+
+    async def _resolve_p2turk(self, embed_url: str) -> List[StreamSource]:
+        """p2turk.xyz JS-rendered player — m3u8-i HTML-dən çıxarır."""
+        html = await self.fetch(embed_url)
+        if not html:
+            return []
+
+        # p2turk m3u8-i JSON config dəyişəninin içinə yerləşdirir
+        patterns = [
+            r'"file"\s*:\s*"(https?://[^"]+\.m3u8[^"]*)"',
+            r"'file'\s*:\s*'(https?://[^']+\.m3u8[^']*)'",
+            r'''source\s*:\s*['\"](https?://[^'"]+\.m3u8[^'"]*)''',
+            r'''['"](https?://[^'"]+\.m3u8[^'"]*)['"]''',
+        ]
+        found: set = set()
+        for pattern in patterns:
+            for m in re.finditer(pattern, html, re.IGNORECASE):
+                found.add(m.group(1).strip())
+
+        if found:
+            urls = list(found)
+            logger.info("p2turk m3u8 tapıldı", url=embed_url, count=len(urls))
+            return self._pair_video_audio(urls)
+
+        # p2turk iç-içə iframe istifadə edə bilər
+        nested = self._find_embed_urls(html)
+        for nested_url in nested[:2]:
+            if nested_url != embed_url and "p2turk" not in nested_url:
+                s = await self._resolve_embed(nested_url)
+                if s:
+                    return s
+
+        logger.warning("p2turk: m3u8 tapılmadı", url=embed_url)
         return []
 
     # ─────────────────────────────────────────────────────────────
