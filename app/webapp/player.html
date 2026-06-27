@@ -293,6 +293,16 @@
   let audioHls = null;
   let currentIndex = 0;
 
+  // ── HLS Proxy — CORS problemini həll edir ────────────────────
+  // p.2turk.xyz CORS header göndərmir. Buna görə bütün HLS URL-ləri
+  // öz serverimizin /hls-proxy endpoint-i üzərindən keçiririk.
+  function toProxyUrl(url) {
+    if (!url || !BASE_URL) return url;
+    // Artıq proxy URL-dirsə dəyişmə
+    if (url.includes('/hls-proxy?')) return url;
+    return BASE_URL + '/hls-proxy?url=' + encodeURIComponent(url);
+  }
+
   // ── Init ──────────────────────────────────────────────────────
   async function init() {
     titleEl.textContent = title;
@@ -542,10 +552,10 @@
 
     if (s.audioUrl) {
       // ── Dual stream: video m3u8 + ayrı audio m3u8
-      loadDualStream(s.url, s.audioUrl, s.quality);
+      loadDualStream(toProxyUrl(s.url), toProxyUrl(s.audioUrl), s.quality);
     } else {
       // ── Tək unified m3u8
-      loadNative(s.url);
+      loadNative(toProxyUrl(s.url));
     }
   }
 
@@ -557,7 +567,7 @@
 
     if (!Hls.isSupported()) {
       showError('Bu brauzerdə dual stream dəstəklənmir. Native HLS cəhd edilir...');
-      loadNative(videoUrl);
+      loadNative(toProxyUrl(videoUrl));
       return;
     }
 
@@ -577,7 +587,7 @@
         // Dual stream uğursuz oldu — master stream-ə keçmeyi cəhd et
         const master = streams.find(s => !s.audioUrl);
         if (master) {
-          loadNative(master.url);
+          loadNative(toProxyUrl(master.url));
         } else {
           showError('Video stream yüklənmədi.');
         }
@@ -661,9 +671,9 @@
         showLoading('Alternativ stream cəhd edilir...');
         destroyHls();
         if (next.audioUrl) {
-          loadDualStream(next.url, next.audioUrl, next.quality);
+          loadDualStream(toProxyUrl(next.url), toProxyUrl(next.audioUrl), next.quality);
         } else {
-          loadNative(next.url, nextIdx);
+          loadNative(toProxyUrl(next.url), nextIdx);
         }
       } else {
         showError(msg || 'HLS stream yüklənmədi.');

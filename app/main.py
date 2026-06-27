@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+from urllib.parse import unquote
 
+import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
@@ -16,6 +18,107 @@ logger = get_logger(__name__)
 
 WEBAPP_DIR = pathlib.Path(__file__).parent / "webapp"
 PLAYER_HTML = WEBAPP_DIR / "player.html"
+
+# Proxy üçün icazəli host-lar (təhlükəsizlik üçün whitelist)
+PROXY_ALLOWED_HOSTS = {
+    "p.2turk.xyz",
+    "2turk.xyz",
+}
+
+PROXY_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://p.2turk.xyz/",
+    "Origin": "https://p.2turk.xyz",
+}
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Range, Content-Type",
+    "Access-Control-Expose-Headers": "Content-Length, Content-Range",
+}
+
+
+async def handle_hls_proxy(request: web.Request) -> web.Response:
+    """
+    HLS stream proxy — CORS problemini həll edir.
+
+    GET /hls-proxy?url=<encoded_m3u8_url>
+
+    p.2turk.xyz CORS header-i göndərmir, buna görə Telegram Mini App
+    birbaşa yükləyə bilmir. Bu endpoint stream-i serverimiz üzərindən
+    keçirir və CORS header-ləri özümüz əlavə edirik.
+
+    m3u8 faylları içindəki nisbi URL-ləri də proxy URL-ə çeviririk.
+    """
+    # OPTIONS preflight
+    if request.method == "OPTIONS":
+        return web.Response(headers=CORS_HEADERS, status=204)
+
+    raw_url = request.query.get("url", "").strip()
+    if not raw_url or not raw_url.startswith("http"):
+        return web.Response(text="Missing url param", status=400, headers=CORS_HEADERS)
+
+    # Whitelist yoxlanması
+    from urllib.parse import urlparse
+    parsed = urlparse(raw_url)
+    if parsed.hostname not in PROXY_ALLOWED_HOSTS:
+        return web.Response(
+            text=f"Host not allowed: {parsed.hostname}",
+            status=403,
+            headers=CORS_HEADERS,
+        )
+
+    base_url = str(request.url.origin())
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                raw_url,
+                headers=PROXY_HEADERS,
+                timeout=aiohttp.ClientTimeout(total=20),
+                allow_redirects=True,
+            ) as upstream:
+                content_type = upstream.headers.get("Content-Type", "application/octet-stream")
+                body = await upstream.read()
+
+                if upstream.status != 200:
+                    return web.Response(
+                        text=f"Upstream error: {upstream.status}",
+                        status=upstream.status,
+                        headers=CORS_HEADERS,
+                    )
+
+                # m3u8 fayllarındakı nisbi URL-ləri proxy URL-ə çevir
+                if "mpegurl" in content_type or raw_url.endswith(".m3u8"):
+                    text = body.decode("utf-8", errors="replace")
+                    from urllib.parse import urljoin
+                    lines = []
+                    for line in text.splitlines():
+                        stripped = line.strip()
+                        if stripped and not stripped.startswith("#"):
+                            # URL-dir — proxy-dən keçir
+                            abs_url = urljoin(raw_url, stripped)
+                            from urllib.parse import quote
+                            proxied = f"{base_url}/hls-proxy?url={quote(abs_url, safe='')}"
+                            lines.append(proxied)
+                        else:
+                            lines.append(line)
+                    body = "\n".join(lines).encode("utf-8")
+                    content_type = "application/vnd.apple.mpegurl"
+
+                headers = {**CORS_HEADERS, "Content-Type": content_type}
+                return web.Response(body=body, headers=headers)
+
+    except asyncio.TimeoutError:
+        return web.Response(text="Upstream timeout", status=504, headers=CORS_HEADERS)
+    except Exception as e:
+        logger.error("HLS proxy xəta", url=raw_url, error=str(e))
+        return web.Response(text=f"Proxy error: {e}", status=502, headers=CORS_HEADERS)
 
 
 # ── WebApp routes ─────────────────────────────────────────────
@@ -108,6 +211,8 @@ def run_polling(bot: Bot, dp: Dispatcher) -> None:
             app = web.Application()
             app.router.add_get("/player", handle_player)
             app.router.add_get("/resolve", handle_resolve)
+            app.router.add_get("/hls-proxy", handle_hls_proxy)
+            app.router.add_route("OPTIONS", "/hls-proxy", handle_hls_proxy)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, "0.0.0.0", settings.port)
@@ -134,6 +239,8 @@ def run_webhook(bot: Bot, dp: Dispatcher) -> None:
 
     app.router.add_get("/player", handle_player)
     app.router.add_get("/resolve", handle_resolve)
+    app.router.add_get("/hls-proxy", handle_hls_proxy)
+    app.router.add_route("OPTIONS", "/hls-proxy", handle_hls_proxy)
 
     handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     handler.register(app, path=settings.webhook_path)
