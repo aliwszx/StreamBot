@@ -277,13 +277,19 @@
     streams = [{ url: mainUrl, quality: quality || 'Default' }];
   }
 
-  // Detect embed URLs (Vidrame, etc.)
+  // Detect embed URLs (Vidrame, etc.) that can go straight into the iframe
   function isEmbed(url) {
     return url && (
       url.includes('vidrame.pro') ||
       url.includes('/embed/') ||
       url.includes('/vr/')
     );
+  }
+
+  // Detect a *source page* URL (e.g. hdfilmizle.to) whose Vidrame embed
+  // must be resolved live, since cached embed links expire.
+  function isResolvablePage(url) {
+    return url && url.includes('hdfilmizle');
   }
 
   function init() {
@@ -344,10 +350,36 @@
 
     if (hls) { hls.destroy(); hls = null; }
 
-    if (isEmbed(s.url)) {
+    if (isResolvablePage(s.url)) {
+      loadResolvedEmbed(s.url);
+    } else if (isEmbed(s.url)) {
       loadEmbed(s.url);
     } else {
       loadNative(s.url);
+    }
+  }
+
+  // ── Live-resolve mode: ask the bot's server to scrape the source page
+  //    right now and hand back a fresh Vidrame embed URL ───────────────
+  async function loadResolvedEmbed(pageUrl) {
+    video.style.display = 'none';
+    embedFrame.style.display = 'block';
+    controlsEl.style.display = 'none';
+    embedInfo.style.display = 'block';
+    showLoading();
+
+    try {
+      const resp = await fetch('/resolve?page=' + encodeURIComponent(pageUrl), { cache: 'no-store' });
+      const data = await resp.json();
+      if (!resp.ok || !data.embed_url) {
+        showError('Axın tapılmadı, mənbə dəyişmiş ola bilər.');
+        return;
+      }
+      embedFrame.onload = () => hideLoading();
+      embedFrame.onerror = () => showError('Embed yüklənmədi.');
+      embedFrame.src = data.embed_url;
+    } catch (e) {
+      showError('Axın yüklənərkən şəbəkə xətası baş verdi.');
     }
   }
 
