@@ -174,6 +174,13 @@ async def delete_stream(stream_id: int) -> None:
     await db.table("streams").delete().eq("id", stream_id).execute()
 
 
+async def delete_streams_by_item(item_id: int) -> None:
+    """Remove all existing streams for an item (used before re-scraping,
+    so stale/expired URLs don't linger alongside the fresh ones)."""
+    db = await get_client()
+    await db.table("streams").delete().eq("item_id", item_id).execute()
+
+
 # ─────────────────────────── Favorites ────────────────────────
 
 async def get_favorites(user_id: int) -> List[Item]:
