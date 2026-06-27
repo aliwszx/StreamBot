@@ -278,10 +278,11 @@ async def cb_scrape_url_start(call: CallbackQuery, state: FSMContext) -> None:
         return await call.answer(t("not_admin"))
     await state.set_state(AdminScrapeURL.url)
     await call.message.edit_text(
-        "🔗 <b>Scrape URL</b>\n\n"
-        "Send me a <b>hdfilmizle.to</b> page URL to automatically extract all stream qualities.\n\n"
-        "Example:\n"
-        "<code>https://www.hdfilmizle.to/dizi/pluribus/sezon-1/bolum-1/</code>",
+        "🔗 <b>Sayt URL-i Scrape Et</b>\n\n"
+        "Film və ya serial səhifəsinin URL-ini göndərin.\n"
+        "Bot özü m3u8 resurslarını tapacaq.\n\n"
+        "Nümunə:\n"
+        "<code>https://sinekfilmizle.com/suc-101-crime-101-2026-izle-047/</code>",
         parse_mode="HTML",
     )
 
@@ -291,40 +292,41 @@ async def admin_scrape_url_received(message: Message, state: FSMContext) -> None
     if not is_admin(message.from_user.id):
         return
 
-    url = message.text.strip()
+    url = message.text.strip() if message.text else ""
     if not url.startswith("http"):
-        await message.answer("❌ Invalid URL. Please send a valid http/https URL.")
+        await message.answer("❌ Yanlış URL. http/https ilə başlamalıdır.")
         return
 
     await state.update_data(url=url)
 
-    # Ask which category to save under
     cats = await queries.get_categories()
     if not cats:
-        await message.answer("❌ No categories found. Please add a category first.")
+        await message.answer("❌ Kateqoriya yoxdur. Əvvəl kateqoriya əlavə edin.")
         await state.clear()
         return
 
-    from app.bot.keyboards import admin_category_select_keyboard
     await state.set_state(AdminScrapeURL.category)
     await message.answer(
-        "📂 Select the category to save this content under:",
+        "📂 Hansı kateqoriyaya saxlayım?",
         reply_markup=admin_category_select_keyboard(cats),
     )
 
 
 @router.callback_query(F.data.startswith("adm_cat:"), AdminScrapeURL.category)
 async def admin_scrape_run(call: CallbackQuery, state: FSMContext) -> None:
-    from app.services.scraper.hdfilmizle import HDFilmizleScraper
+    from app.services.scraper.sinekfilmizle import SinekfilmizleScraper
 
     cat_id = int(call.data.split(":")[1])
     data = await state.get_data()
     url = data.get("url", "")
 
     await state.clear()
-    await call.message.edit_text(f"⏳ Scraping...\n<code>{url}</code>", parse_mode="HTML")
+    await call.message.edit_text(
+        f"⏳ Scraping edilir...\n<code>{url}</code>",
+        parse_mode="HTML",
+    )
 
-    scraper = HDFilmizleScraper(page_url=url)
+    scraper = SinekfilmizleScraper(page_url=url)
     try:
         streams = await scraper.scrape()
     finally:
@@ -332,21 +334,21 @@ async def admin_scrape_run(call: CallbackQuery, state: FSMContext) -> None:
 
     if not streams:
         await call.message.edit_text(
-            "❌ No streams found. The page structure may have changed or Vidrame blocked the request.",
+            "❌ Stream tapılmadı.\n\n"
+            "Mümkün səbəblər:\n"
+            "• Sayt JavaScript render edir (Playwright lazımdır)\n"
+            "• Embed URL struktur dəyişib\n"
+            "• Anti-bot qoruması var\n\n"
+            "Admin panelə qayıt və manual stream əlavə et.",
             reply_markup=admin_panel_keyboard(),
         )
         return
 
-    # Use the first stream's metadata for the item
     first = streams[0]
 
-    # Create or find item by title
     existing = await queries.search_items(first.title, limit=1)
     if existing:
         item = existing[0]
-        logger.info("Using existing item", id=item.id, title=item.title)
-        # Wipe old streams (they may hold stale/expired embed URLs from a
-        # previous scrape) so re-scraping always leaves a clean, fresh set.
         await queries.delete_streams_by_item(item.id)
     else:
         item = await queries.create_item(
@@ -355,27 +357,21 @@ async def admin_scrape_run(call: CallbackQuery, state: FSMContext) -> None:
             category_id=cat_id,
             image=first.image,
         )
-        logger.info("Created new item", id=item.id, title=item.title)
 
-    # Save each quality stream
     saved = 0
     for s in streams:
         try:
-            await queries.create_stream(
-                item_id=item.id,
-                url=s.url,
-                quality=s.quality,
-            )
+            await queries.create_stream(item_id=item.id, url=s.url, quality=s.quality)
             saved += 1
         except Exception as exc:
-            logger.warning("Failed to save stream", quality=s.quality, error=str(exc))
+            logger.warning("Stream saxlanmadı", quality=s.quality, error=str(exc))
 
     qualities = ", ".join(s.quality for s in streams)
     await call.message.edit_text(
-        f"✅ <b>Done!</b>\n\n"
-        f"📌 Item: <b>{first.title}</b>\n"
-        f"🎬 Streams saved: <b>{saved}</b>\n"
-        f"📺 Qualities: <code>{qualities}</code>",
+        f"✅ <b>Tamamlandı!</b>\n\n"
+        f"📌 Film: <b>{first.title}</b>\n"
+        f"🎬 Saxlanan stream: <b>{saved}</b>\n"
+        f"📺 Keyfiyyətlər: <code>{qualities}</code>",
         parse_mode="HTML",
         reply_markup=admin_panel_keyboard(),
     )

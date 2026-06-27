@@ -71,228 +71,241 @@
       display: block; outline: none;
     }
 
-    /* Iframe embed (Vidrame etc.) */
-    #embed-frame {
-      width: 100%; height: 100%;
-      border: none;
-      display: none;
-    }
-
-    /* Loading */
+    /* Loading overlay */
     #loading {
-      position: absolute; inset: 0;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      background: rgba(0,0,0,0.8); gap: 12px;
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      z-index: 10;
     }
     .spinner {
-      width: 42px; height: 42px;
-      border: 3px solid rgba(255,255,255,0.15);
+      width: 40px; height: 40px;
+      border: 3px solid #333;
       border-top-color: var(--accent);
       border-radius: 50%;
-      animation: spin .8s linear infinite;
+      animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #loading p { font-size: 13px; color: var(--muted); }
+    #loading-text { font-size: 13px; color: var(--muted); }
 
-    /* Error */
-    #error-overlay {
-      display: none; position: absolute; inset: 0;
-      flex-direction: column; align-items: center; justify-content: center;
-      background: rgba(0,0,0,0.85); gap: 14px; padding: 20px; text-align: center;
+    /* Error overlay */
+    #error {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      z-index: 10;
+      padding: 20px;
+      text-align: center;
     }
-    #error-overlay .icon { font-size: 40px; }
-    #error-overlay p { font-size: 14px; color: var(--muted); }
+    #error-icon { font-size: 36px; }
+    #error-msg { font-size: 14px; color: #ccc; }
     #retry-btn {
-      background: var(--accent); color: #fff; border: none;
-      border-radius: var(--radius); padding: 10px 24px;
-      font-size: 14px; font-weight: 600; cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 20px;
+      font-size: 14px;
+      cursor: pointer;
     }
 
-    /* Controls (native video only) */
+    /* Controls */
     #controls {
-      padding: 14px 16px 10px;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
       background: var(--surface);
-      display: flex; flex-direction: column; gap: 10px;
       flex-shrink: 0;
     }
-    #progress-wrap { display: flex; align-items: center; gap: 10px; }
-    input[type=range] {
-      -webkit-appearance: none; flex: 1; height: 4px;
-      background: #333; border-radius: 4px; outline: none; cursor: pointer;
-    }
-    input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 14px; height: 14px;
-      background: var(--accent); border-radius: 50%; cursor: pointer;
-    }
-    #time { font-size: 12px; color: var(--muted); white-space: nowrap; }
-    #btn-row { display: flex; align-items: center; gap: 8px; }
     .ctrl-btn {
-      background: #2a2a2a; border: none; border-radius: 50%;
-      width: 40px; height: 40px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; cursor: pointer; color: var(--text); flex-shrink: 0;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 18px;
+      cursor: pointer;
+      flex-shrink: 0;
+      width: 32px;
+      text-align: center;
     }
-    .ctrl-btn:active { background: #3a3a3a; }
-    #play-btn { width: 48px; height: 48px; font-size: 22px; background: var(--accent); }
-    #vol-wrap { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-    #vol-wrap input { width: 70px; }
+    #progress {
+      flex: 1;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    #time { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 80px; }
+    #vol-slider { width: 70px; accent-color: var(--accent); }
 
-    /* Stream list */
-    #streams-section { padding: 14px 16px; flex: 1; overflow-y: auto; }
+    /* Dual stream info badge */
+    #dual-badge {
+      display: none;
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: rgba(90,141,238,0.85);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      z-index: 5;
+      letter-spacing: 0.5px;
+    }
+
+    /* Streams section */
+    #streams-section {
+      padding: 14px 16px;
+      flex-shrink: 0;
+    }
     #streams-section h3 {
-      font-size: 13px; color: var(--muted);
-      text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
     }
     #stream-list { display: flex; flex-direction: column; gap: 8px; }
     .stream-item {
-      display: flex; align-items: center; gap: 10px;
-      background: var(--surface); border-radius: var(--radius);
-      padding: 12px 14px; cursor: pointer;
-      border: 2px solid transparent; transition: border-color .2s;
-    }
-    .stream-item.active { border-color: var(--accent); background: rgba(90,141,238,.08); }
-    .stream-icon { font-size: 22px; }
-    .stream-info { flex: 1; }
-    .stream-quality { font-size: 14px; font-weight: 600; }
-    .stream-url { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
-    .stream-check { color: var(--accent); font-size: 18px; display: none; }
-    .stream-item.active .stream-check { display: block; }
-
-    /* Embed info bar (shown instead of controls for embed streams) */
-    #embed-info {
-      display: none;
-      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
       background: var(--surface);
-      font-size: 12px; color: var(--muted);
-      text-align: center;
-      flex-shrink: 0;
+      border-radius: var(--radius);
+      border: 1.5px solid transparent;
+      cursor: pointer;
+      transition: border-color 0.15s;
     }
+    .stream-item.active { border-color: var(--accent); }
+    .stream-item:hover { border-color: #444; }
+    .stream-icon { font-size: 18px; }
+    .stream-info { flex: 1; min-width: 0; }
+    .stream-quality { font-size: 14px; font-weight: 600; }
+    .stream-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .stream-check { color: var(--accent); font-size: 16px; display: none; }
+    .stream-item.active .stream-check { display: block; }
 
     /* No params */
     #no-params {
-      display: none; flex: 1; align-items: center; justify-content: center;
-      flex-direction: column; gap: 12px; padding: 30px; text-align: center;
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--muted);
     }
-    #no-params .icon { font-size: 48px; }
-    #no-params p { font-size: 14px; color: var(--muted); }
+    #no-params-icon { font-size: 48px; }
   </style>
 </head>
 <body>
-
-<div id="header">
-  <span class="logo">🎬</span>
-  <span id="title">StreamBot Player</span>
-  <span id="quality-badge"></span>
-</div>
-
-<div id="player-area">
-  <video id="video" playsinline></video>
-  <iframe id="embed-frame" allowfullscreen allow="autoplay; fullscreen"></iframe>
-  <div id="loading">
-    <div class="spinner"></div>
-    <p>Yüklənir...</p>
+  <div id="header">
+    <span class="logo">🎬</span>
+    <span id="title">StreamBot</span>
+    <span id="quality-badge"></span>
   </div>
-  <div id="error-overlay">
-    <span class="icon">⚠️</span>
-    <p id="error-msg">Axın yüklənərkən xəta baş verdi.</p>
-    <button id="retry-btn">Yenidən cəhd et</button>
-  </div>
-</div>
 
-<!-- Native video controls -->
-<div id="controls">
-  <div id="progress-wrap">
-    <input type="range" id="progress" value="0" min="0" max="100" step="0.1" />
-    <span id="time">--:-- / --:--</span>
-  </div>
-  <div id="btn-row">
-    <button class="ctrl-btn" id="play-btn">▶</button>
-    <button class="ctrl-btn" id="mute-btn">🔊</button>
-    <div id="vol-wrap">
-      <input type="range" id="volume" value="100" min="0" max="100" />
+  <div id="player-area">
+    <video id="video" controls playsinline></video>
+    <span id="dual-badge">🎵 DUAL</span>
+
+    <div id="loading">
+      <div class="spinner"></div>
+      <div id="loading-text">Yüklənir...</div>
     </div>
-    <button class="ctrl-btn" id="fullscreen-btn">⛶</button>
+
+    <div id="error">
+      <div id="error-icon">⚠️</div>
+      <div id="error-msg">Stream yüklənmədi.</div>
+      <button id="retry-btn">🔄 Yenidən cəhd et</button>
+    </div>
   </div>
-</div>
 
-<!-- Embed info bar (Vidrame etc.) -->
-<div id="embed-info">
-  🎬 Vidrame player · Tam ekran üçün video üzərinə toxunun
-</div>
+  <div id="controls">
+    <button class="ctrl-btn" id="play-btn">▶</button>
+    <input type="range" id="progress" min="0" max="100" value="0" />
+    <span id="time">00:00 / 00:00</span>
+    <button class="ctrl-btn" id="mute-btn">🔊</button>
+    <input type="range" id="vol-slider" min="0" max="100" value="100" />
+    <button class="ctrl-btn" id="fs-btn">⛶</button>
+  </div>
 
-<div id="streams-section">
-  <h3>Keyfiyyətlər</h3>
-  <div id="stream-list"></div>
-</div>
+  <div id="streams-section" style="display:none">
+    <h3>Keyfiyyət seçin</h3>
+    <div id="stream-list"></div>
+  </div>
 
-<div id="no-params">
-  <span class="icon">📡</span>
-  <p>Axın məlumatları tapılmadı.<br>Bot vasitəsilə videonuzu açın.</p>
-</div>
+  <div id="no-params">
+    <div id="no-params-icon">📭</div>
+    <div>Stream tapılmadı</div>
+  </div>
 
 <script>
-  const tg = window.Telegram?.WebApp;
-  if (tg) { tg.ready(); tg.expand(); }
+  // ── URL params ────────────────────────────────────────────────
+  const params     = new URLSearchParams(location.search);
+  const title      = decodeURIComponent(params.get('title') || 'Video');
+  const pageUrl    = params.get('page') || '';   // live-resolve üçün
+  const rawStreams = params.get('streams') || ''; // pre-encoded streams
 
-  function getParams() {
-    const search = window.location.search || window.location.hash.replace('#','?');
-    return new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-  }
+  // streams formatı: JSON array
+  // [{url: "...", quality: "..."}, ...]
+  // url ya birbaşa m3u8 ya da JSON {"v":"...","a":"...","q":"..."}
+  let streams = [];
+  try {
+    if (rawStreams) streams = JSON.parse(decodeURIComponent(rawStreams));
+  } catch(_) {}
 
-  const params    = getParams();
-  const mainUrl   = params.get('url');
-  const title     = params.get('title') || 'Video';
-  const quality   = params.get('quality') || '';
-  let streamsRaw  = params.get('streams');
-
-  const video       = document.getElementById('video');
-  const embedFrame  = document.getElementById('embed-frame');
-  const loadingEl   = document.getElementById('loading');
-  const errorEl     = document.getElementById('error-overlay');
-  const errorMsg    = document.getElementById('error-msg');
-  const retryBtn    = document.getElementById('retry-btn');
-  const playBtn     = document.getElementById('play-btn');
-  const muteBtn     = document.getElementById('mute-btn');
-  const volSlider   = document.getElementById('volume');
-  const progress    = document.getElementById('progress');
-  const timeEl      = document.getElementById('time');
-  const fsBtn       = document.getElementById('fullscreen-btn');
-  const streamList  = document.getElementById('stream-list');
-  const noParams    = document.getElementById('no-params');
-  const qualityBadge= document.getElementById('quality-badge');
-  const titleEl     = document.getElementById('title');
-  const controlsEl  = document.getElementById('controls');
-  const embedInfo   = document.getElementById('embed-info');
-  const streamsSec  = document.getElementById('streams-section');
+  const titleEl    = document.getElementById('title');
+  const qualityBadge = document.getElementById('quality-badge');
+  const loadingEl  = document.getElementById('loading');
+  const loadingTxt = document.getElementById('loading-text');
+  const errorEl    = document.getElementById('error');
+  const errorMsg   = document.getElementById('error-msg');
+  const retryBtn   = document.getElementById('retry-btn');
+  const controlsEl = document.getElementById('controls');
+  const streamsSec = document.getElementById('streams-section');
+  const streamList = document.getElementById('stream-list');
+  const noParams   = document.getElementById('no-params');
+  const video      = document.getElementById('video');
+  const playBtn    = document.getElementById('play-btn');
+  const progress   = document.getElementById('progress');
+  const timeEl     = document.getElementById('time');
+  const muteBtn    = document.getElementById('mute-btn');
+  const volSlider  = document.getElementById('vol-slider');
+  const fsBtn      = document.getElementById('fs-btn');
+  const dualBadge  = document.getElementById('dual-badge');
 
   let hls = null;
+  let audioHls = null;
   let currentIndex = 0;
-  let streams = [];
 
-  if (streamsRaw) {
-    try { streams = JSON.parse(decodeURIComponent(streamsRaw)); } catch(e) {}
-  }
-  if (!streams.length && mainUrl) {
-    streams = [{ url: mainUrl, quality: quality || 'Default' }];
-  }
+  // ── Init ──────────────────────────────────────────────────────
+  async function init() {
+    titleEl.textContent = title;
 
-  // Detect embed URLs (Vidrame, etc.) that can go straight into the iframe
-  function isEmbed(url) {
-    return url && (
-      url.includes('vidrame.pro') ||
-      url.includes('/embed/') ||
-      url.includes('/vr/')
-    );
-  }
+    // Əgər live-resolve lazımdırsa (pageUrl verilmişsə)
+    if (pageUrl && !streams.length) {
+      showLoading('Mənbədən stream alınır...');
+      const liveSources = await fetchLiveSources(pageUrl);
+      if (liveSources && liveSources.length) {
+        streams = liveSources.map(s => ({
+          url: s.video,
+          audioUrl: s.audio || null,
+          quality: s.quality || 'HD',
+        }));
+      }
+    }
 
-  // Detect a *source page* URL (e.g. hdfilmizle.to) whose Vidrame embed
-  // must be resolved live, since cached embed links expire.
-  function isResolvablePage(url) {
-    return url && url.includes('hdfilmizle');
-  }
-
-  function init() {
     if (!streams.length) {
       document.getElementById('player-area').style.display = 'none';
       controlsEl.style.display = 'none';
@@ -301,22 +314,38 @@
       loadingEl.style.display = 'none';
       return;
     }
-    titleEl.textContent = title;
+
     renderStreamList();
     loadStream(0);
   }
 
+  // ── Live resolve ──────────────────────────────────────────────
+  async function fetchLiveSources(url) {
+    try {
+      const resp = await fetch('/resolve?page=' + encodeURIComponent(url), { cache: 'no-store' });
+      const data = await resp.json();
+      if (!resp.ok || !data.sources) return null;
+      return data.sources; // [{video, audio?, quality}]
+    } catch(e) {
+      return null;
+    }
+  }
+
+  // ── Stream list render ────────────────────────────────────────
   function renderStreamList() {
     streamList.innerHTML = '';
     if (streams.length <= 1) { streamsSec.style.display = 'none'; return; }
+    streamsSec.style.display = 'block';
+
     streams.forEach((s, i) => {
       const div = document.createElement('div');
       div.className = 'stream-item' + (i === 0 ? ' active' : '');
+      const isDual = !!(s.audioUrl);
       div.innerHTML = `
         <span class="stream-icon">${qualityIcon(s.quality)}</span>
         <div class="stream-info">
-          <div class="stream-quality">${s.quality}</div>
-          <div class="stream-url">${s.url}</div>
+          <div class="stream-quality">${s.quality}${isDual ? ' 🎵' : ''}</div>
+          <div class="stream-meta">${isDual ? 'Video + Audio ayrı m3u8' : 'Unified stream'}</div>
         </div>
         <span class="stream-check">✓</span>`;
       div.addEventListener('click', () => loadStream(i));
@@ -334,6 +363,7 @@
     return '📺';
   }
 
+  // ── Load stream ───────────────────────────────────────────────
   function loadStream(index) {
     currentIndex = index;
     const s = streams[index];
@@ -345,65 +375,116 @@
     document.querySelectorAll('.stream-item').forEach((el, i) =>
       el.classList.toggle('active', i === index));
 
-    showLoading();
+    showLoading('Stream yüklənir...');
     hideError();
 
-    if (hls) { hls.destroy(); hls = null; }
+    destroyHls();
 
-    if (isResolvablePage(s.url)) {
-      loadResolvedEmbed(s.url);
-    } else if (isEmbed(s.url)) {
-      loadEmbed(s.url);
+    if (s.audioUrl) {
+      // ── Dual stream: video m3u8 + ayrı audio m3u8
+      loadDualStream(s.url, s.audioUrl, s.quality);
     } else {
+      // ── Tək unified m3u8
       loadNative(s.url);
     }
   }
 
-  // ── Live-resolve mode: ask the bot's server to scrape the source page
-  //    right now and hand back a fresh Vidrame embed URL ───────────────
-  async function loadResolvedEmbed(pageUrl) {
-    video.style.display = 'none';
-    embedFrame.style.display = 'block';
-    controlsEl.style.display = 'none';
-    embedInfo.style.display = 'block';
-    showLoading();
+  // ── Dual stream (video + audio ayrı m3u8) ────────────────────
+  function loadDualStream(videoUrl, audioUrl, quality) {
+    video.style.display = 'block';
+    controlsEl.style.display = 'flex';
+    dualBadge.style.display = 'block';
 
-    try {
-      const resp = await fetch('/resolve?page=' + encodeURIComponent(pageUrl), { cache: 'no-store' });
-      const data = await resp.json();
-      if (!resp.ok || !data.embed_url) {
-        showError('Axın tapılmadı, mənbə dəyişmiş ola bilər.');
-        return;
+    if (!Hls.isSupported()) {
+      showError('Bu brauzerdə dual stream dəstəklənmir. Native HLS cəhd edilir...');
+      loadNative(videoUrl);
+      return;
+    }
+
+    // Video HLS
+    hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+    hls.loadSource(videoUrl);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      // Audio HLS — ayrı audio track kimi yükləyirik
+      // Hls.js audio track-ləri video media-ya bağlayırıq
+      loadAudioTrack(audioUrl);
+    });
+    hls.on(Hls.Events.ERROR, (_, data) => {
+      if (data.fatal) {
+        showError('Video stream yüklənmədi.');
+        destroyHls();
       }
-      embedFrame.onload = () => hideLoading();
-      embedFrame.onerror = () => showError('Embed yüklənmədi.');
-      embedFrame.src = data.embed_url;
-    } catch (e) {
-      showError('Axın yüklənərkən şəbəkə xətası baş verdi.');
+    });
+  }
+
+  function loadAudioTrack(audioUrl) {
+    // Audio üçün ayrı hidden <audio> elementi istifadə edirik
+    // video ilə sinxron edirik
+    let audioEl = document.getElementById('audio-sync');
+    if (!audioEl) {
+      audioEl = document.createElement('audio');
+      audioEl.id = 'audio-sync';
+      audioEl.style.display = 'none';
+      document.body.appendChild(audioEl);
+    }
+
+    if (Hls.isSupported()) {
+      audioHls = new Hls({ enableWorker: true });
+      audioHls.loadSource(audioUrl);
+      audioHls.attachMedia(audioEl);
+      audioHls.on(Hls.Events.MANIFEST_PARSED, () => {
+        audioEl.volume = video.volume;
+        audioEl.muted = video.muted;
+        hideLoading();
+        video.play().then(() => {
+          audioEl.play().catch(() => {});
+          syncAudio(audioEl);
+        }).catch(() => {});
+        updatePlayBtn();
+      });
+      audioHls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) {
+          // Audio xətası — yalnız video ilə davam et
+          console.warn('Audio track xətası, yalnız video oxunur');
+          hideLoading();
+          video.play().catch(() => {});
+        }
+      });
+    } else {
+      audioEl.src = audioUrl;
+      audioEl.load();
+      hideLoading();
+      video.play().then(() => {
+        audioEl.play().catch(() => {});
+        syncAudio(audioEl);
+      }).catch(() => {});
     }
   }
 
-  // ── Embed mode (Vidrame iframe) ──────────────────────────────
-  function loadEmbed(url) {
-    video.style.display = 'none';
-    embedFrame.style.display = 'block';
-    controlsEl.style.display = 'none';
-    embedInfo.style.display = 'block';
-
-    embedFrame.onload = () => hideLoading();
-    embedFrame.onerror = () => showError('Embed yüklənmədi.');
-    embedFrame.src = url;
+  function syncAudio(audioEl) {
+    // Video ilə audio-nu sinxron tut
+    video.addEventListener('play', () => { audioEl.play().catch(() => {}); });
+    video.addEventListener('pause', () => { audioEl.pause(); });
+    video.addEventListener('seeked', () => { audioEl.currentTime = video.currentTime; });
+    video.addEventListener('volumechange', () => {
+      audioEl.volume = video.volume;
+      audioEl.muted = video.muted;
+    });
+    video.addEventListener('ended', () => { audioEl.pause(); });
   }
 
-  // ── Native mode (HLS / mp4) ──────────────────────────────────
+  // ── Native/unified HLS ────────────────────────────────────────
   function loadNative(url) {
-    embedFrame.style.display = 'none';
-    embedFrame.src = '';
     video.style.display = 'block';
     controlsEl.style.display = 'flex';
-    embedInfo.style.display = 'none';
+    dualBadge.style.display = 'none';
 
-    const isHls = url.includes('.m3u8') || url.includes('m3u8') || url.endsWith('.txt');
+    // Köhnə audio sinc elementi sil
+    const oldAudio = document.getElementById('audio-sync');
+    if (oldAudio) { oldAudio.src = ''; oldAudio.remove(); }
+
+    const isHls = url.includes('.m3u8') || url.includes('m3u8');
 
     if (isHls && Hls.isSupported()) {
       hls = new Hls({ enableWorker: true, lowLatencyMode: true });
@@ -415,11 +496,11 @@
         updatePlayBtn();
       });
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) showError('HLS axını yüklənmədi.');
+        if (data.fatal) showError('HLS stream yüklənmədi.');
       });
     } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = url;
-      video.addEventListener('loadedmetadata', () => { hideLoading(); video.play().catch(()=>{}); }, { once: true });
+      video.addEventListener('loadedmetadata', () => { hideLoading(); video.play().catch(() => {}); }, { once: true });
       video.addEventListener('error', () => showError('Video yüklənmədi.'), { once: true });
     } else {
       video.src = url;
@@ -429,17 +510,42 @@
     }
   }
 
-  function showLoading() { loadingEl.style.display = 'flex'; }
+  // ── HLS cleanup ───────────────────────────────────────────────
+  function destroyHls() {
+    if (hls) { hls.destroy(); hls = null; }
+    if (audioHls) { audioHls.destroy(); audioHls = null; }
+    const oldAudio = document.getElementById('audio-sync');
+    if (oldAudio) { oldAudio.pause(); oldAudio.src = ''; }
+    video.pause();
+    video.src = '';
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────
+  function showLoading(msg) {
+    loadingTxt.textContent = msg || 'Yüklənir...';
+    loadingEl.style.display = 'flex';
+  }
   function hideLoading() { loadingEl.style.display = 'none'; }
-  function showError(msg) { hideLoading(); errorMsg.textContent = msg; errorEl.style.display = 'flex'; }
+  function showError(msg) {
+    hideLoading();
+    errorMsg.textContent = msg;
+    errorEl.style.display = 'flex';
+  }
   function hideError() { errorEl.style.display = 'none'; }
 
   retryBtn.addEventListener('click', () => loadStream(currentIndex));
 
-  // Native video controls
+  // ── Native video controls ─────────────────────────────────────
   function updatePlayBtn() { playBtn.textContent = video.paused ? '▶' : '⏸'; }
   playBtn.addEventListener('click', () => {
-    video.paused ? video.play().catch(()=>{}) : video.pause();
+    const audioEl = document.getElementById('audio-sync');
+    if (video.paused) {
+      video.play().catch(() => {});
+      if (audioEl) audioEl.play().catch(() => {});
+    } else {
+      video.pause();
+      if (audioEl) audioEl.pause();
+    }
     updatePlayBtn();
   });
   video.addEventListener('play', updatePlayBtn);
@@ -451,7 +557,12 @@
     timeEl.textContent = fmt(video.currentTime) + ' / ' + fmt(video.duration);
   });
   progress.addEventListener('input', () => {
-    if (video.duration) video.currentTime = (progress.value / 100) * video.duration;
+    if (video.duration) {
+      const t = (progress.value / 100) * video.duration;
+      video.currentTime = t;
+      const audioEl = document.getElementById('audio-sync');
+      if (audioEl) audioEl.currentTime = t;
+    }
   });
   video.addEventListener('loadedmetadata', () => {
     const live = !isFinite(video.duration);
@@ -465,12 +576,16 @@
   }
 
   muteBtn.addEventListener('click', () => {
+    const audioEl = document.getElementById('audio-sync');
     video.muted = !video.muted;
+    if (audioEl) audioEl.muted = video.muted;
     muteBtn.textContent = video.muted ? '🔇' : '🔊';
   });
   volSlider.addEventListener('input', () => {
+    const audioEl = document.getElementById('audio-sync');
     video.volume = volSlider.value / 100;
     video.muted = video.volume === 0;
+    if (audioEl) { audioEl.volume = video.volume; audioEl.muted = video.muted; }
     muteBtn.textContent = video.muted ? '🔇' : '🔊';
   });
 

@@ -3,18 +3,17 @@ from __future__ import annotations
 from typing import List, Type
 
 from app.services.scraper.base import BaseScraper, ScrapedStream
-from app.services.scraper.site1 import Site1Scraper
-from app.services.scraper.site2 import Site2Scraper
 from app.database import queries
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-SCRAPERS: List[Type[BaseScraper]] = [Site1Scraper, Site2Scraper]
+# Avtomatik scraper-lər (gələcəkdə əlavə edilə bilər)
+SCRAPERS: List[Type[BaseScraper]] = []
 
 
 async def run_all_scrapers() -> int:
-    """Run all registered scrapers and persist results to Supabase."""
+    """Qeydə alınmış bütün scraper-ləri işlət."""
     total = 0
     for scraper_cls in SCRAPERS:
         scraper = scraper_cls()
@@ -40,7 +39,6 @@ async def _persist(streams: List[ScrapedStream]) -> int:
             logger.warning("Unknown category slug, skipping", slug=s.category_slug)
             continue
 
-        # Find existing item by title+category or create
         existing = await queries.search_items(s.title, limit=1)
         existing_in_cat = [i for i in existing if i.category_id == cat.id]
         if existing_in_cat:

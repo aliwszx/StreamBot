@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import pathlib
 
@@ -15,14 +16,14 @@ from app.utils.logging import setup_logging, get_logger
 
 logger = get_logger(__name__)
 
-# Path to the WebApp HTML file
 WEBAPP_DIR = pathlib.Path(__file__).parent / "webapp"
 PLAYER_HTML = WEBAPP_DIR / "player.html"
 
 
 # ── WebApp route ──────────────────────────────────────────────
+
 async def handle_player(request: web.Request) -> web.Response:
-    """Serve the Telegram Mini App video player page."""
+    """Telegram Mini App video player səhifəsi."""
     try:
         content = PLAYER_HTML.read_text(encoding="utf-8")
         return web.Response(
@@ -30,7 +31,6 @@ async def handle_player(request: web.Request) -> web.Response:
             content_type="text/html",
             charset="utf-8",
             headers={
-                # Required for Telegram WebApp to be allowed inside the in-app browser
                 "X-Frame-Options": "ALLOWALL",
                 "Content-Security-Policy": "frame-ancestors *",
             },
@@ -41,27 +41,46 @@ async def handle_player(request: web.Request) -> web.Response:
 
 async def handle_resolve(request: web.Request) -> web.Response:
     """
-    Live-resolve endpoint.
+    Canlı resolve endpoint.
 
-    The player page calls this with `?page=<hdfilmizle page url>` right
-    before playback starts, so we always hand back a freshly-scraped
-    Vidrame embed URL instead of a possibly-expired cached one.
+    Player hər izləmədə bu endpoint-i çağırır:
+      GET /resolve?page=<url>
+
+    Cavab:
+      {
+        "sources": [
+          {"video": "...m3u8", "audio": "...m3u8", "quality": "1080p"},
+          {"video": "...m3u8", "quality": "720p"}
+        ]
+      }
+
+    audio sahəsi yalnız video və audio ayrı m3u8-dirsə olur.
     """
     page_url = request.query.get("page", "").strip()
-    if not page_url or "hdfilmizle" not in page_url:
+    if not page_url or not page_url.startswith("http"):
         return web.json_response({"error": "invalid page url"}, status=400)
 
-    from app.services.scraper.hdfilmizle import HDFilmizleScraper
+    from app.services.scraper.sinekfilmizle import SinekfilmizleScraper
 
-    embed_url = await HDFilmizleScraper.resolve_embed_url(page_url)
-    if not embed_url:
-        return web.json_response({"error": "embed not found"}, status=502)
+    sources = await SinekfilmizleScraper.resolve_live(page_url)
+
+    if not sources:
+        return web.json_response({"error": "no sources found"}, status=502)
+
+    result = []
+    for src in sources:
+        entry: dict = {"video": src.video_url, "quality": src.quality}
+        if src.audio_url:
+            entry["audio"] = src.audio_url
+        result.append(entry)
 
     return web.json_response(
-        {"embed_url": embed_url},
+        {"sources": result},
         headers={"Cache-Control": "no-store"},
     )
 
+
+# ── Lifecycle ─────────────────────────────────────────────────
 
 async def on_startup(bot: Bot) -> None:
     if settings.use_webhook:
@@ -94,7 +113,6 @@ def run_polling(bot: Bot, dp: Dispatcher) -> None:
     async def _run() -> None:
         await on_startup(bot)
         try:
-            # Run a minimal web server alongside polling so /player is reachable
             app = web.Application()
             app.router.add_get("/player", handle_player)
             app.router.add_get("/resolve", handle_resolve)
@@ -102,8 +120,7 @@ def run_polling(bot: Bot, dp: Dispatcher) -> None:
             await runner.setup()
             site = web.TCPSite(runner, "0.0.0.0", settings.port)
             await site.start()
-            logger.info("WebApp player available", port=settings.port, path="/player")
-
+            logger.info("WebApp player hazırdır", port=settings.port, path="/player")
             await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
         finally:
             await on_shutdown(bot)
@@ -123,7 +140,6 @@ def run_webhook(bot: Bot, dp: Dispatcher) -> None:
     app.on_startup.append(_startup)
     app.on_shutdown.append(_shutdown)
 
-    # ── Telegram Mini App player page ──
     app.router.add_get("/player", handle_player)
     app.router.add_get("/resolve", handle_resolve)
 
@@ -140,10 +156,10 @@ def main() -> None:
     dp = create_dispatcher()
 
     if settings.use_webhook:
-        logger.info("Starting in webhook mode", port=settings.port)
+        logger.info("Webhook mode başladılır", port=settings.port)
         run_webhook(bot, dp)
     else:
-        logger.info("Starting in polling mode")
+        logger.info("Polling mode başladılır")
         run_polling(bot, dp)
 
 
