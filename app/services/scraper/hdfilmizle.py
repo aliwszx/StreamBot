@@ -14,8 +14,11 @@ logger = get_logger(__name__)
 class HDFilmizleScraper(BaseScraper):
     """
     Scraper for hdfilmizle.to
-    Extracts the Vidrame embed URL and saves it as a single stream.
-    The player.html opens it in an iframe so Vidrame's own player handles playback.
+
+    Vidrame embed URLs expire after a while, so we no longer store the
+    resolved embed URL itself in the database. Instead the *page URL* is
+    stored as the stream, and the embed is re-resolved live (see
+    `resolve_embed_url`) every time someone actually opens the player.
     """
 
     name = "hdfilmizle"
@@ -57,6 +60,24 @@ class HDFilmizleScraper(BaseScraper):
         slug = "series" if "/dizi/" in self.page_url else "movies"
 
         # ── Vidrame embed URL ──
+        embed_url = self._extract_embed_from_html(html)
+        if not embed_url:
+            logger.warning("Vidrame embed not found", url=self.page_url)
+            return None
+
+        return {
+            "title": title,
+            "description": desc,
+            "image": image,
+            "category_slug": slug,
+            "embed_url": embed_url,
+        }
+
+    @staticmethod
+    def _extract_embed_from_html(html: str) -> Optional[str]:
+        """Pull the (current, possibly fresh) Vidrame embed URL out of page HTML."""
+        soup = BeautifulSoup(html, "lxml")
+
         embed_url = None
         for iframe in soup.find_all("iframe"):
             src = iframe.get("src", "")
@@ -69,19 +90,31 @@ class HDFilmizleScraper(BaseScraper):
                 embed_url = match.group(1)
 
         if not embed_url:
-            logger.warning("Vidrame embed not found", url=self.page_url)
             return None
 
         # Normalise: ensure no query string junk
-        embed_url = embed_url.split("?")[0]
+        return embed_url.split("?")[0]
 
-        return {
-            "title": title,
-            "description": desc,
-            "image": image,
-            "category_slug": slug,
-            "embed_url": embed_url,
-        }
+    @classmethod
+    async def resolve_embed_url(cls, page_url: str) -> Optional[str]:
+        """
+        Lightweight, on-demand resolver: fetch the hdfilmizle page *right now*
+        and return whatever Vidrame embed URL it currently contains.
+
+        Called every time a user opens the player, instead of relying on a
+        cached embed URL that Vidrame may have already invalidated.
+        """
+        scraper = cls(page_url=page_url)
+        try:
+            html = await scraper.fetch(page_url)
+            if not html:
+                return None
+            embed_url = cls._extract_embed_from_html(html)
+            if not embed_url:
+                logger.warning("Live resolve: embed not found", url=page_url)
+            return embed_url
+        finally:
+            await scraper.close()
 
     async def scrape(self) -> List[ScrapedStream]:
         meta = await self._get_metadata_and_embed()
@@ -91,14 +124,17 @@ class HDFilmizleScraper(BaseScraper):
         logger.info(
             "HDFilmizle scrape complete",
             title=meta["title"],
-            embed=meta["embed_url"],
+            page=self.page_url,
         )
 
         return [
             ScrapedStream(
                 title=meta["title"],
                 description=meta["description"],
-                url=meta["embed_url"],          # Vidrame embed URL stored as stream
+                # Store the PAGE url, not the embed url: Vidrame embed links
+                # expire, so the actual embed is resolved live at watch-time
+                # via HDFilmizleScraper.resolve_embed_url().
+                url=self.page_url,
                 quality="Vidrame",
                 category_slug=meta["category_slug"],
                 image=meta["image"],
