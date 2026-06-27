@@ -4,12 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>StreamBot Player</title>
-
-  <!-- Telegram WebApp SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <!-- HLS.js for m3u8 streams -->
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
-
   <style>
     :root {
       --bg: #0d0d0d;
@@ -19,9 +15,7 @@
       --muted: #888;
       --radius: 12px;
     }
-
     * { box-sizing: border-box; margin: 0; padding: 0; }
-
     body {
       background: var(--bg);
       color: var(--text);
@@ -31,7 +25,7 @@
       flex-direction: column;
     }
 
-    /* ── Header ── */
+    /* Header */
     #header {
       display: flex;
       align-items: center;
@@ -39,6 +33,7 @@
       padding: 12px 16px;
       background: var(--surface);
       border-bottom: 1px solid #2a2a2a;
+      flex-shrink: 0;
     }
     #header .logo { font-size: 20px; }
     #title {
@@ -58,167 +53,105 @@
       border-radius: 20px;
       white-space: nowrap;
       flex-shrink: 0;
+      display: none;
     }
 
-    /* ── Player wrapper ── */
-    #player-wrap {
+    /* Player area */
+    #player-area {
       position: relative;
       width: 100%;
       background: #000;
       aspect-ratio: 16/9;
+      flex-shrink: 0;
     }
 
-    video {
-      width: 100%;
-      height: 100%;
-      display: block;
-      outline: none;
+    /* Native video */
+    #video {
+      width: 100%; height: 100%;
+      display: block; outline: none;
     }
 
-    /* Loading overlay */
+    /* Iframe embed (Vidrame etc.) */
+    #embed-frame {
+      width: 100%; height: 100%;
+      border: none;
+      display: none;
+    }
+
+    /* Loading */
     #loading {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0,0,0,0.75);
-      gap: 12px;
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.8); gap: 12px;
     }
     .spinner {
-      width: 42px;
-      height: 42px;
+      width: 42px; height: 42px;
       border: 3px solid rgba(255,255,255,0.15);
       border-top-color: var(--accent);
       border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+      animation: spin .8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     #loading p { font-size: 13px; color: var(--muted); }
 
-    /* Error overlay */
+    /* Error */
     #error-overlay {
-      display: none;
-      position: absolute;
-      inset: 0;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0,0,0,0.85);
-      gap: 14px;
-      padding: 20px;
-      text-align: center;
+      display: none; position: absolute; inset: 0;
+      flex-direction: column; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.85); gap: 14px; padding: 20px; text-align: center;
     }
     #error-overlay .icon { font-size: 40px; }
     #error-overlay p { font-size: 14px; color: var(--muted); }
     #retry-btn {
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: var(--radius);
-      padding: 10px 24px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
+      background: var(--accent); color: #fff; border: none;
+      border-radius: var(--radius); padding: 10px 24px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
     }
-    #retry-btn:active { opacity: 0.8; }
 
-    /* ── Controls bar ── */
+    /* Controls (native video only) */
     #controls {
       padding: 14px 16px 10px;
       background: var(--surface);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
+      display: flex; flex-direction: column; gap: 10px;
+      flex-shrink: 0;
     }
-
-    /* Progress */
-    #progress-wrap {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+    #progress-wrap { display: flex; align-items: center; gap: 10px; }
     input[type=range] {
-      -webkit-appearance: none;
-      flex: 1;
-      height: 4px;
-      background: #333;
-      border-radius: 4px;
-      outline: none;
-      cursor: pointer;
+      -webkit-appearance: none; flex: 1; height: 4px;
+      background: #333; border-radius: 4px; outline: none; cursor: pointer;
     }
     input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 14px; height: 14px;
-      background: var(--accent);
-      border-radius: 50%;
-      cursor: pointer;
+      -webkit-appearance: none; width: 14px; height: 14px;
+      background: var(--accent); border-radius: 50%; cursor: pointer;
     }
     #time { font-size: 12px; color: var(--muted); white-space: nowrap; }
-
-    /* Buttons row */
-    #btn-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+    #btn-row { display: flex; align-items: center; gap: 8px; }
     .ctrl-btn {
-      background: #2a2a2a;
-      border: none;
-      border-radius: 50%;
+      background: #2a2a2a; border: none; border-radius: 50%;
       width: 40px; height: 40px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 18px;
-      cursor: pointer;
-      transition: background .15s;
-      flex-shrink: 0;
-      color: var(--text);
+      font-size: 18px; cursor: pointer; color: var(--text); flex-shrink: 0;
     }
     .ctrl-btn:active { background: #3a3a3a; }
-
     #play-btn { width: 48px; height: 48px; font-size: 22px; background: var(--accent); }
-    #play-btn:active { background: #4a7dde; }
-
-    /* Volume */
-    #vol-wrap {
-      display: flex; align-items: center; gap: 6px; margin-left: auto;
-    }
+    #vol-wrap { display: flex; align-items: center; gap: 6px; margin-left: auto; }
     #vol-wrap input { width: 70px; }
 
-    /* ── Stream list ── */
-    #streams-section {
-      padding: 14px 16px;
-      flex: 1;
-    }
+    /* Stream list */
+    #streams-section { padding: 14px 16px; flex: 1; overflow-y: auto; }
     #streams-section h3 {
-      font-size: 13px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .05em;
-      margin-bottom: 10px;
+      font-size: 13px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
     }
-    #stream-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
+    #stream-list { display: flex; flex-direction: column; gap: 8px; }
     .stream-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background: var(--surface);
-      border-radius: var(--radius);
-      padding: 12px 14px;
-      cursor: pointer;
-      border: 2px solid transparent;
-      transition: border-color .2s, background .2s;
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface); border-radius: var(--radius);
+      padding: 12px 14px; cursor: pointer;
+      border: 2px solid transparent; transition: border-color .2s;
     }
-    .stream-item:active { background: #252525; }
-    .stream-item.active {
-      border-color: var(--accent);
-      background: rgba(90,141,238,.08);
-    }
+    .stream-item.active { border-color: var(--accent); background: rgba(90,141,238,.08); }
     .stream-icon { font-size: 22px; }
     .stream-info { flex: 1; }
     .stream-quality { font-size: 14px; font-weight: 600; }
@@ -226,16 +159,20 @@
     .stream-check { color: var(--accent); font-size: 18px; display: none; }
     .stream-item.active .stream-check { display: block; }
 
-    /* ── No params fallback ── */
-    #no-params {
+    /* Embed info bar (shown instead of controls for embed streams) */
+    #embed-info {
       display: none;
-      flex: 1;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      gap: 12px;
-      padding: 30px;
+      padding: 10px 16px;
+      background: var(--surface);
+      font-size: 12px; color: var(--muted);
       text-align: center;
+      flex-shrink: 0;
+    }
+
+    /* No params */
+    #no-params {
+      display: none; flex: 1; align-items: center; justify-content: center;
+      flex-direction: column; gap: 12px; padding: 30px; text-align: center;
     }
     #no-params .icon { font-size: 48px; }
     #no-params p { font-size: 14px; color: var(--muted); }
@@ -246,11 +183,12 @@
 <div id="header">
   <span class="logo">🎬</span>
   <span id="title">StreamBot Player</span>
-  <span id="quality-badge" style="display:none"></span>
+  <span id="quality-badge"></span>
 </div>
 
-<div id="player-wrap">
-  <video id="video" playsinline controls></video>
+<div id="player-area">
+  <video id="video" playsinline></video>
+  <iframe id="embed-frame" allowfullscreen allow="autoplay; fullscreen"></iframe>
   <div id="loading">
     <div class="spinner"></div>
     <p>Yüklənir...</p>
@@ -262,19 +200,25 @@
   </div>
 </div>
 
+<!-- Native video controls -->
 <div id="controls">
   <div id="progress-wrap">
     <input type="range" id="progress" value="0" min="0" max="100" step="0.1" />
     <span id="time">--:-- / --:--</span>
   </div>
   <div id="btn-row">
-    <button class="ctrl-btn" id="play-btn" title="Oynat/Durdur">▶</button>
-    <button class="ctrl-btn" id="mute-btn" title="Səs">🔊</button>
+    <button class="ctrl-btn" id="play-btn">▶</button>
+    <button class="ctrl-btn" id="mute-btn">🔊</button>
     <div id="vol-wrap">
       <input type="range" id="volume" value="100" min="0" max="100" />
     </div>
-    <button class="ctrl-btn" id="fullscreen-btn" title="Tam ekran">⛶</button>
+    <button class="ctrl-btn" id="fullscreen-btn">⛶</button>
   </div>
+</div>
+
+<!-- Embed info bar (Vidrame etc.) -->
+<div id="embed-info">
+  🎬 Vidrame player · Tam ekran üçün video üzərinə toxunun
 </div>
 
 <div id="streams-section">
@@ -288,33 +232,22 @@
 </div>
 
 <script>
-  // ── Telegram WebApp init ──
   const tg = window.Telegram?.WebApp;
-  if (tg) {
-    tg.ready();
-    tg.expand();
-    // Apply Telegram theme colors if available
-    if (tg.themeParams?.bg_color) {
-      document.body.style.background = tg.themeParams.bg_color;
-    }
-  }
+  if (tg) { tg.ready(); tg.expand(); }
 
-  // ── Parse params from URL hash or query ──
-  // Bot sends: ?url=<encoded>&quality=<q>&title=<t>&streams=<json_encoded>
   function getParams() {
     const search = window.location.search || window.location.hash.replace('#','?');
-    const p = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-    return p;
+    return new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
   }
 
-  const params = getParams();
+  const params    = getParams();
   const mainUrl   = params.get('url');
   const title     = params.get('title') || 'Video';
   const quality   = params.get('quality') || '';
-  let   streamsRaw = params.get('streams'); // JSON array: [{url, quality}, ...]
+  let streamsRaw  = params.get('streams');
 
-  // ── DOM refs ──
   const video       = document.getElementById('video');
+  const embedFrame  = document.getElementById('embed-frame');
   const loadingEl   = document.getElementById('loading');
   const errorEl     = document.getElementById('error-overlay');
   const errorMsg    = document.getElementById('error-msg');
@@ -330,33 +263,38 @@
   const qualityBadge= document.getElementById('quality-badge');
   const titleEl     = document.getElementById('title');
   const controlsEl  = document.getElementById('controls');
+  const embedInfo   = document.getElementById('embed-info');
   const streamsSec  = document.getElementById('streams-section');
 
   let hls = null;
-  let currentUrl = null;
   let currentIndex = 0;
-
-  // ── Build stream list ──
   let streams = [];
+
   if (streamsRaw) {
     try { streams = JSON.parse(decodeURIComponent(streamsRaw)); } catch(e) {}
   }
-  // If only single url/quality provided, wrap it
   if (!streams.length && mainUrl) {
     streams = [{ url: mainUrl, quality: quality || 'Default' }];
   }
 
-  // ── Show/hide UI based on data ──
+  // Detect embed URLs (Vidrame, etc.)
+  function isEmbed(url) {
+    return url && (
+      url.includes('vidrame.pro') ||
+      url.includes('/embed/') ||
+      url.includes('/vr/')
+    );
+  }
+
   function init() {
     if (!streams.length) {
-      document.getElementById('player-wrap').style.display = 'none';
+      document.getElementById('player-area').style.display = 'none';
       controlsEl.style.display = 'none';
       streamsSec.style.display = 'none';
       noParams.style.display = 'flex';
       loadingEl.style.display = 'none';
       return;
     }
-
     titleEl.textContent = title;
     renderStreamList();
     loadStream(0);
@@ -364,10 +302,7 @@
 
   function renderStreamList() {
     streamList.innerHTML = '';
-    if (streams.length <= 1) {
-      streamsSec.style.display = 'none';
-      return;
-    }
+    if (streams.length <= 1) { streamsSec.style.display = 'none'; return; }
     streams.forEach((s, i) => {
       const div = document.createElement('div');
       div.className = 'stream-item' + (i === 0 ? ' active' : '');
@@ -377,20 +312,19 @@
           <div class="stream-quality">${s.quality}</div>
           <div class="stream-url">${s.url}</div>
         </div>
-        <span class="stream-check">✓</span>
-      `;
+        <span class="stream-check">✓</span>`;
       div.addEventListener('click', () => loadStream(i));
       streamList.appendChild(div);
     });
   }
 
   function qualityIcon(q) {
-    const lower = (q || '').toLowerCase();
-    if (lower.includes('4k') || lower.includes('2160')) return '🌟';
-    if (lower.includes('1080')) return '🔵';
-    if (lower.includes('720')) return '🟢';
-    if (lower.includes('480')) return '🟡';
-    if (lower.includes('360')) return '🟠';
+    const l = (q || '').toLowerCase();
+    if (l.includes('4k') || l.includes('2160')) return '🌟';
+    if (l.includes('1080')) return '🔵';
+    if (l.includes('720'))  return '🟢';
+    if (l.includes('480'))  return '🟡';
+    if (l.includes('360'))  return '🟠';
     return '📺';
   }
 
@@ -399,27 +333,49 @@
     const s = streams[index];
     if (!s) return;
 
-    currentUrl = s.url;
-
-    // Update badge
     qualityBadge.textContent = s.quality;
     qualityBadge.style.display = 'inline-block';
 
-    // Update active in list
-    document.querySelectorAll('.stream-item').forEach((el, i) => {
-      el.classList.toggle('active', i === index);
-    });
+    document.querySelectorAll('.stream-item').forEach((el, i) =>
+      el.classList.toggle('active', i === index));
 
     showLoading();
     hideError();
 
     if (hls) { hls.destroy(); hls = null; }
 
-    const isHls = s.url.includes('.m3u8') || s.url.includes('m3u8');
+    if (isEmbed(s.url)) {
+      loadEmbed(s.url);
+    } else {
+      loadNative(s.url);
+    }
+  }
+
+  // ── Embed mode (Vidrame iframe) ──────────────────────────────
+  function loadEmbed(url) {
+    video.style.display = 'none';
+    embedFrame.style.display = 'block';
+    controlsEl.style.display = 'none';
+    embedInfo.style.display = 'block';
+
+    embedFrame.onload = () => hideLoading();
+    embedFrame.onerror = () => showError('Embed yüklənmədi.');
+    embedFrame.src = url;
+  }
+
+  // ── Native mode (HLS / mp4) ──────────────────────────────────
+  function loadNative(url) {
+    embedFrame.style.display = 'none';
+    embedFrame.src = '';
+    video.style.display = 'block';
+    controlsEl.style.display = 'flex';
+    embedInfo.style.display = 'none';
+
+    const isHls = url.includes('.m3u8') || url.includes('m3u8') || url.endsWith('.txt');
 
     if (isHls && Hls.isSupported()) {
       hls = new Hls({ enableWorker: true, lowLatencyMode: true });
-      hls.loadSource(s.url);
+      hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         hideLoading();
@@ -427,61 +383,44 @@
         updatePlayBtn();
       });
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
-          showError('HLS axını yüklənmədi: ' + (data.details || ''));
-        }
+        if (data.fatal) showError('HLS axını yüklənmədi.');
       });
     } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Native HLS (iOS Safari)
-      video.src = s.url;
+      video.src = url;
       video.addEventListener('loadedmetadata', () => { hideLoading(); video.play().catch(()=>{}); }, { once: true });
       video.addEventListener('error', () => showError('Video yüklənmədi.'), { once: true });
     } else {
-      // Direct mp4/webm etc.
-      video.src = s.url;
-      video.addEventListener('canplay', () => { hideLoading(); }, { once: true });
+      video.src = url;
+      video.addEventListener('canplay', hideLoading, { once: true });
       video.addEventListener('error', () => showError('Video yüklənmədi.'), { once: true });
       video.play().catch(() => {});
     }
   }
 
-  // ── Loading / Error ──
   function showLoading() { loadingEl.style.display = 'flex'; }
   function hideLoading() { loadingEl.style.display = 'none'; }
-  function showError(msg) {
-    hideLoading();
-    errorMsg.textContent = msg;
-    errorEl.style.display = 'flex';
-  }
+  function showError(msg) { hideLoading(); errorMsg.textContent = msg; errorEl.style.display = 'flex'; }
   function hideError() { errorEl.style.display = 'none'; }
 
   retryBtn.addEventListener('click', () => loadStream(currentIndex));
 
-  // ── Play / Pause ──
-  function updatePlayBtn() {
-    playBtn.textContent = video.paused ? '▶' : '⏸';
-  }
+  // Native video controls
+  function updatePlayBtn() { playBtn.textContent = video.paused ? '▶' : '⏸'; }
   playBtn.addEventListener('click', () => {
-    if (video.paused) video.play().catch(()=>{});
-    else video.pause();
+    video.paused ? video.play().catch(()=>{}) : video.pause();
     updatePlayBtn();
   });
   video.addEventListener('play', updatePlayBtn);
   video.addEventListener('pause', updatePlayBtn);
 
-  // ── Progress ──
   video.addEventListener('timeupdate', () => {
     if (!video.duration) return;
-    const pct = (video.currentTime / video.duration) * 100;
-    progress.value = pct;
+    progress.value = (video.currentTime / video.duration) * 100;
     timeEl.textContent = fmt(video.currentTime) + ' / ' + fmt(video.duration);
   });
   progress.addEventListener('input', () => {
-    if (video.duration) {
-      video.currentTime = (progress.value / 100) * video.duration;
-    }
+    if (video.duration) video.currentTime = (progress.value / 100) * video.duration;
   });
-  // For live streams hide progress
   video.addEventListener('loadedmetadata', () => {
     const live = !isFinite(video.duration);
     progress.style.display = live ? 'none' : '';
@@ -490,33 +429,27 @@
 
   function fmt(s) {
     if (!isFinite(s)) return '--:--';
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60);
-    return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+    return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(Math.floor(s%60)).padStart(2,'0');
   }
 
-  // ── Volume ──
   muteBtn.addEventListener('click', () => {
     video.muted = !video.muted;
     muteBtn.textContent = video.muted ? '🔇' : '🔊';
   });
   volSlider.addEventListener('input', () => {
     video.volume = volSlider.value / 100;
-    if (video.volume === 0) { video.muted = true; muteBtn.textContent = '🔇'; }
-    else { video.muted = false; muteBtn.textContent = '🔊'; }
+    video.muted = video.volume === 0;
+    muteBtn.textContent = video.muted ? '🔇' : '🔊';
   });
 
-  // ── Fullscreen ──
   fsBtn.addEventListener('click', () => {
-    const wrap = document.getElementById('player-wrap');
-    if (!document.fullscreenElement) {
-      (wrap.requestFullscreen || wrap.webkitRequestFullscreen || wrap.mozRequestFullScreen).call(wrap);
-    } else {
+    const el = document.getElementById('player-area');
+    if (!document.fullscreenElement)
+      (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+    else
       (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-    }
   });
 
-  // ── Init ──
   init();
 </script>
 </body>
