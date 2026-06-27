@@ -1,12 +1,10 @@
-# ── Build stage ───────────────────────────────────────────────
-FROM python:3.12-slim AS base
+FROM python:3.12-slim
 
-# Sistem paketləri: lxml + Playwright Chromium dependencies
+# Sistem paketləri
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libxml2-dev \
     libxslt-dev \
-    # Playwright / Chromium dependencies
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
@@ -35,16 +33,17 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Playwright Chromium brauzerini yüklə
-RUN playwright install chromium --with-deps 2>/dev/null || playwright install chromium
-
 # Mənbə kodunu kopyala
 COPY . .
 
-# Non-root istifadəçi
+# Non-root user yarat
 RUN adduser --disabled-password --gecos "" botuser \
     && chown -R botuser:botuser /app
+
+# botuser kimi Chromium yüklə (path botuser-in home-una düşsün)
 USER botuser
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/botuser/.cache/ms-playwright
+RUN playwright install chromium
 
 EXPOSE 8000
 
