@@ -83,7 +83,9 @@ async def handle_resolve(request: web.Request) -> web.Response:
 
     from app.services.scraper.sinekfilmizle import SinekfilmizleScraper
 
+    logger.info("Resolve başladı", url=page_url)
     sources = await SinekfilmizleScraper.resolve_live(page_url)
+    logger.info("Resolve tamamlandı", url=page_url, sources_found=len(sources))
 
     if not sources:
         return web.json_response({"error": "no sources found"}, status=502)

@@ -5,6 +5,7 @@ import json
 import asyncio
 from typing import List, Optional, Dict
 from dataclasses import dataclass
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -31,10 +32,11 @@ class SinekfilmizleScraper(BaseScraper):
     sinekfilmizle.com üçün scraper.
 
     Strategiya (sıra ilə):
-      1. Playwright (headless Chromium) ilə səhifəni tam render et
-         — bütün network request-ləri dinlə, m3u8-ləri tap
-      2. Əgər Playwright quraşdırılmayıbsa, aiohttp fallback
-         (JS render olmayan sadə saytlar üçün)
+      1. aiohttp ilə əsas səhifəni çək → JS fayllarında m3u8 axtar
+      2. iframe/embed URL-lərini tap → hər birini resolve et
+      3. p2turk.xyz üçün xüsusi handler
+      4. Playwright mövcuddursa son çarə kimi istifadə et
+         (Render-də işləməyə bilər, ona görə son sıradadır)
     """
 
     name = "sinekfilmizle"
@@ -45,6 +47,15 @@ class SinekfilmizleScraper(BaseScraper):
         "streamtape", "voe.sx", "upstream", "vudeo",
         "player", "embed", "play", "stream", "p2turk",
         "mcloud", "rabbitstream", "mycloud",
+    ]
+
+    # sinekfilmizle.com-un öz JS player faylları
+    PLAYER_JS_PATTERNS = [
+        r"requests\.js",
+        r"player\.js",
+        r"video\.js",
+        r"stream\.js",
+        r"source\.js",
     ]
 
     def __init__(self, page_url: str) -> None:
@@ -84,29 +95,196 @@ class SinekfilmizleScraper(BaseScraper):
     async def resolve_live(cls, page_url: str) -> List[StreamSource]:
         """
         Canlı resolve — hər izləmədə çağırılır.
-        Playwright mövcuddursa onu, yoxsa aiohttp fallback-i işlədir.
+        Əvvəlcə aiohttp+JS parsing, sonra Playwright cəhdi.
         """
-        # Playwright cəhdi
+        scraper = cls(page_url=page_url)
+        try:
+            # 1. Əsas strategiya: aiohttp ilə JS fayllarını analiz et
+            sources = await scraper._aiohttp_resolve()
+            if sources:
+                logger.info("aiohttp resolve uğurlu", url=page_url, count=len(sources))
+                return sources
+        finally:
+            await scraper.close()
+
+        # 2. Fallback: Playwright (Render-də işləməyə bilər)
         try:
             sources = await cls._playwright_resolve(page_url)
             if sources:
                 logger.info("Playwright resolve uğurlu", url=page_url, count=len(sources))
                 return sources
         except ImportError:
-            logger.warning("Playwright quraşdırılmayıb, fallback işlədilir")
+            logger.warning("Playwright quraşdırılmayıb")
         except Exception as exc:
             logger.error("Playwright xətası", error=str(exc), type=type(exc).__name__)
-            raise
 
-        # aiohttp fallback
-        scraper = cls(page_url=page_url)
-        try:
-            return await scraper._aiohttp_resolve()
-        finally:
-            await scraper.close()
+        logger.warning("Bütün strategiyalar uğursuz oldu", url=page_url)
+        return []
 
     # ─────────────────────────────────────────────────────────────
-    # Playwright (əsas metod)
+    # aiohttp — əsas strategiya
+    # ─────────────────────────────────────────────────────────────
+
+    async def _aiohttp_resolve(self) -> List[StreamSource]:
+        html = await self.fetch(self.page_url)
+        if not html:
+            return []
+
+        # 1. Əsas HTML-də birbaşa m3u8 axtar
+        direct = self._find_m3u8_in_html(html)
+        if direct:
+            logger.info("HTML-də m3u8 tapıldı", count=len(direct))
+            return direct
+
+        # 2. sinekfilmizle öz JS player fayllarını yüklə — m3u8 orada ola bilər
+        js_sources = await self._resolve_player_js(html)
+        if js_sources:
+            logger.info("JS faylında m3u8 tapıldı", count=len(js_sources))
+            return js_sources
+
+        # 3. iframe/embed URL-lərini tap və resolve et
+        embed_urls = self._find_embed_urls(html)
+        logger.debug("Embed URL-lər tapıldı", count=len(embed_urls), urls=embed_urls)
+        for embed_url in embed_urls:
+            sources = await self._resolve_embed(embed_url)
+            if sources:
+                return sources
+
+        return []
+
+    async def _resolve_player_js(self, page_html: str) -> List[StreamSource]:
+        """
+        sinekfilmizle.com öz JS fayllarında (requests.js kimi) m3u8 URL-lərini saxlayır.
+        Şəbəkə request-lərindən görünür: playlist_index-f1-v1.m3u8, master.m3u8 və s.
+        Bu metod həmin JS fayllarını çəkib m3u8 tapmağa çalışır.
+        """
+        soup = BeautifulSoup(page_html, "lxml")
+        js_urls: List[str] = []
+
+        for script in soup.find_all("script", src=True):
+            src = script.get("src", "")
+            if not src:
+                continue
+            # Nisbi URL-ləri mütləqə çevir
+            if src.startswith("//"):
+                src = "https:" + src
+            elif src.startswith("/"):
+                src = self.base_url + src
+            # Player JS fayllarını tap
+            for pattern in self.PLAYER_JS_PATTERNS:
+                if re.search(pattern, src, re.I):
+                    js_urls.append(src)
+                    break
+
+        # Həmçinin inline <script>-lərdə başqa JS URL-ləri axtar
+        for script in soup.find_all("script"):
+            text = script.get_text()
+            for m in re.finditer(r'''['"]((?:https?:)?//[^'"]+\.js[^'"]*)['"]''', text):
+                url = m.group(1)
+                if url.startswith("//"):
+                    url = "https:" + url
+                for pattern in self.PLAYER_JS_PATTERNS:
+                    if re.search(pattern, url, re.I):
+                        if url not in js_urls:
+                            js_urls.append(url)
+                        break
+
+        logger.debug("Player JS faylları tapıldı", count=len(js_urls), urls=js_urls)
+
+        for js_url in js_urls[:5]:
+            js_content = await self.fetch(js_url)
+            if not js_content:
+                continue
+            sources = self._find_m3u8_in_html(js_content)
+            if sources:
+                logger.info("JS faylında m3u8 tapıldı", js=js_url)
+                return sources
+
+        return []
+
+    async def _resolve_embed(self, embed_url: str) -> List[StreamSource]:
+        """Embed URL-i resolve et — növünə görə xüsusi handler-lərə yönləndir."""
+
+        if "p2turk" in embed_url:
+            return await self._resolve_p2turk(embed_url)
+
+        html = await self.fetch(embed_url)
+        if not html:
+            return []
+
+        # Birbaşa m3u8 axtar
+        sources = self._find_m3u8_in_html(html)
+        if sources:
+            return sources
+
+        # JWPlayer / VideoJS config axtar
+        sources = self._parse_player_config(html)
+        if sources:
+            return sources
+
+        # Bu səhifənin JS fayllarını da yoxla
+        js_sources = await self._resolve_player_js(html)
+        if js_sources:
+            return js_sources
+
+        # Daha dərin iç-içə embed-lər
+        nested = self._find_embed_urls(html)
+        for nested_url in nested[:3]:
+            if nested_url != embed_url:
+                s = await self._resolve_embed(nested_url)
+                if s:
+                    return s
+
+        return []
+
+    async def _resolve_p2turk(self, embed_url: str) -> List[StreamSource]:
+        """
+        p2turk.xyz player — HTML-dən m3u8 çıxarır.
+        Şəbəkədən görünür ki, bu player master.m3u8 istifadə edir.
+        """
+        html = await self.fetch(embed_url)
+        if not html:
+            return []
+
+        # p2turk m3u8-i JSON config və ya JS dəyişənlərinin içinə yerləşdirir
+        patterns = [
+            r'"file"\s*:\s*"(https?://[^"]+\.m3u8[^"]*)"',
+            r"'file'\s*:\s*'(https?://[^']+\.m3u8[^']*)'",
+            r'source\s*:\s*[\'\"](https?://[^\'\"]+\.m3u8[^\'\"]*)',
+            r'src\s*:\s*[\'\"](https?://[^\'\"]+\.m3u8[^\'\"]*)',
+            r'[\'\"](https?://[^\'\"]+master\.m3u8[^\'\"]*)[\'\""]',
+            r'[\'\"](https?://[^\'\"]+\.m3u8[^\'\"]*)[\'\""]',
+        ]
+        found: set = set()
+        for pattern in patterns:
+            for m in re.finditer(pattern, html, re.IGNORECASE):
+                url = m.group(1).strip()
+                if url:
+                    found.add(url)
+
+        if found:
+            urls = list(found)
+            logger.info("p2turk m3u8 tapıldı", url=embed_url, count=len(urls))
+            return self._pair_video_audio(urls)
+
+        # p2turk-un öz JS fayllarını da yoxla
+        js_sources = await self._resolve_player_js(html)
+        if js_sources:
+            return js_sources
+
+        # p2turk iç-içə iframe istifadə edə bilər
+        nested = self._find_embed_urls(html)
+        for nested_url in nested[:2]:
+            if nested_url != embed_url and "p2turk" not in nested_url:
+                s = await self._resolve_embed(nested_url)
+                if s:
+                    return s
+
+        logger.warning("p2turk: m3u8 tapılmadı", url=embed_url)
+        return []
+
+    # ─────────────────────────────────────────────────────────────
+    # Playwright — son çarə
     # ─────────────────────────────────────────────────────────────
 
     @classmethod
@@ -114,6 +292,7 @@ class SinekfilmizleScraper(BaseScraper):
         """
         Headless Chromium ilə tam render edir.
         Bütün network request-lərini dinləyir — m3u8 görən kimi qeyd edir.
+        Render/Docker-də işləməyə bilər, ona görə son sıradadır.
         """
         from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 
@@ -128,7 +307,6 @@ class SinekfilmizleScraper(BaseScraper):
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
-                    # Render/Docker container mühiti üçün əlavə flag-lər
                     "--single-process",
                     "--no-zygote",
                     "--disable-extensions",
@@ -148,14 +326,13 @@ class SinekfilmizleScraper(BaseScraper):
                 viewport={"width": 1280, "height": 720},
             )
 
-            # ── Əsas səhifə ──────────────────────────────────────
             page = await context.new_page()
 
             def on_request(req):
                 url = req.url
                 if ".m3u8" in url:
                     m3u8_urls.append(url)
-                    logger.debug("m3u8 tapıldı (main)", url=url)
+                    logger.debug("m3u8 tapıldı (Playwright)", url=url)
                 elif any(h in url for h in cls.KNOWN_PLAYER_HOSTS):
                     embed_urls.append(url)
 
@@ -163,10 +340,8 @@ class SinekfilmizleScraper(BaseScraper):
 
             try:
                 await page.goto(page_url, wait_until="domcontentloaded", timeout=30_000)
-                # Sayt yüklənsin deyə bir az gözləyirik
                 await page.wait_for_timeout(3000)
 
-                # Play düyməsini tapmağa çalışırıq
                 for selector in [
                     "button.play", ".play-btn", "#play", ".player-play",
                     "[data-plyr='play']", ".jw-icon-playback",
@@ -182,7 +357,6 @@ class SinekfilmizleScraper(BaseScraper):
                     except Exception:
                         pass
 
-                # m3u8 gəlməsini gözlə (max 15s)
                 for _ in range(15):
                     if m3u8_urls:
                         break
@@ -193,7 +367,6 @@ class SinekfilmizleScraper(BaseScraper):
             except Exception as exc:
                 logger.error("Playwright page error", error=str(exc))
 
-            # ── Embed səhifələrini də yoxla ──────────────────────
             if not m3u8_urls and embed_urls:
                 for embed_url in embed_urls[:3]:
                     embed_page = await context.new_page()
@@ -202,7 +375,6 @@ class SinekfilmizleScraper(BaseScraper):
                         await embed_page.goto(embed_url, wait_until="domcontentloaded", timeout=20_000)
                         await embed_page.wait_for_timeout(4000)
 
-                        # Embed-dəki play düyməsini click et
                         for selector in [
                             "button[class*='play']", ".play", "#play",
                             "[data-plyr='play']", ".jw-icon-playback",
@@ -235,85 +407,8 @@ class SinekfilmizleScraper(BaseScraper):
         if not m3u8_urls:
             return []
 
-        # Dublikatları sil, cütləşdir
         unique = list(dict.fromkeys(m3u8_urls))
         return cls._pair_video_audio(unique)
-
-    # ─────────────────────────────────────────────────────────────
-    # aiohttp fallback (JS olmayan / sadə embed-lər)
-    # ─────────────────────────────────────────────────────────────
-
-    async def _aiohttp_resolve(self) -> List[StreamSource]:
-        html = await self.fetch(self.page_url)
-        if not html:
-            return []
-
-        direct = self._find_m3u8_in_html(html)
-        if direct:
-            return direct
-
-        embed_urls = self._find_embed_urls(html)
-        for embed_url in embed_urls:
-            sources = await self._resolve_embed(embed_url)
-            if sources:
-                return sources
-        return []
-
-    async def _resolve_embed(self, embed_url: str) -> List[StreamSource]:
-        # p2turk üçün xüsusi yol
-        if "p2turk" in embed_url:
-            return await self._resolve_p2turk(embed_url)
-
-        html = await self.fetch(embed_url)
-        if not html:
-            return []
-        sources = self._find_m3u8_in_html(html)
-        if sources:
-            return sources
-        sources = self._parse_player_config(html)
-        if sources:
-            return sources
-        nested = self._find_embed_urls(html)
-        for nested_url in nested[:3]:  # 2-dən 3-ə artırıldı — daha dərin iç-içə embed-lər üçün
-            if nested_url != embed_url:
-                s = await self._resolve_embed(nested_url)
-                if s:
-                    return s
-        return []
-
-    async def _resolve_p2turk(self, embed_url: str) -> List[StreamSource]:
-        """p2turk.xyz JS-rendered player — m3u8-i HTML-dən çıxarır."""
-        html = await self.fetch(embed_url)
-        if not html:
-            return []
-
-        # p2turk m3u8-i JSON config dəyişəninin içinə yerləşdirir
-        patterns = [
-            r'"file"\s*:\s*"(https?://[^"]+\.m3u8[^"]*)"',
-            r"'file'\s*:\s*'(https?://[^']+\.m3u8[^']*)'",
-            r'''source\s*:\s*['\"](https?://[^'"]+\.m3u8[^'"]*)''',
-            r'''['"](https?://[^'"]+\.m3u8[^'"]*)['"]''',
-        ]
-        found: set = set()
-        for pattern in patterns:
-            for m in re.finditer(pattern, html, re.IGNORECASE):
-                found.add(m.group(1).strip())
-
-        if found:
-            urls = list(found)
-            logger.info("p2turk m3u8 tapıldı", url=embed_url, count=len(urls))
-            return self._pair_video_audio(urls)
-
-        # p2turk iç-içə iframe istifadə edə bilər
-        nested = self._find_embed_urls(html)
-        for nested_url in nested[:2]:
-            if nested_url != embed_url and "p2turk" not in nested_url:
-                s = await self._resolve_embed(nested_url)
-                if s:
-                    return s
-
-        logger.warning("p2turk: m3u8 tapılmadı", url=embed_url)
-        return []
 
     # ─────────────────────────────────────────────────────────────
     # HTML parse köməkçiləri
@@ -333,16 +428,30 @@ class SinekfilmizleScraper(BaseScraper):
     def _find_embed_urls(self, html: str) -> List[str]:
         soup = BeautifulSoup(html, "lxml")
         urls = []
+
+        # iframe və frame-lər
         for tag in soup.find_all(["iframe", "frame"]):
-            src = tag.get("src") or tag.get("data-src") or ""
+            src = tag.get("src") or tag.get("data-src") or tag.get("data-lazy-src") or ""
             if src.startswith("http"):
                 urls.append(src)
+            elif src.startswith("//"):
+                urls.append("https:" + src)
+
+        # Script-lərdə gizlənmiş embed URL-lər
         for script in soup.find_all("script"):
             text = script.get_text()
             for m in re.finditer(r'''['"](\bhttps?://\S+?)['"]''', text):
                 c = m.group(1)
                 if any(h in c for h in self.KNOWN_PLAYER_HOSTS):
                     urls.append(c)
+
+        # data-* atributlarında embed URL-lər
+        for tag in soup.find_all(True):
+            for attr in ["data-src", "data-url", "data-video", "data-embed"]:
+                val = tag.get(attr, "")
+                if val.startswith("http") and any(h in val for h in self.KNOWN_PLAYER_HOSTS):
+                    urls.append(val)
+
         seen = set()
         return [u for u in urls if u not in seen and not seen.add(u)]
 
@@ -357,7 +466,15 @@ class SinekfilmizleScraper(BaseScraper):
                     return self._pair_video_audio(urls)
             except Exception:
                 pass
-        # Generic
+
+        # VideoJS
+        m = re.search(r'videojs\([^)]+\)[^{]*(\{[^}]+sources[^}]+\})', html, re.DOTALL)
+        if m:
+            sources = self._find_m3u8_in_html(m.group(1))
+            if sources:
+                return sources
+
+        # Generic file/url/src config
         video_urls = list(set(re.findall(
             r'''(?:file|url|src)\s*:\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]''',
             html, re.IGNORECASE
@@ -368,6 +485,7 @@ class SinekfilmizleScraper(BaseScraper):
         )))
         if video_urls:
             return self._pair_video_audio(video_urls, audio_urls or None)
+
         return []
 
     # ─────────────────────────────────────────────────────────────
@@ -418,7 +536,9 @@ class SinekfilmizleScraper(BaseScraper):
             audio_candidates = [
                 u for u in video_urls
                 if re.search(r'[_\-/](audio|sound|aac|ac3)[_\-/.]', u, re.I)
+                or re.search(r'[-_]a\d*\.m3u8', u, re.I)
                 or re.search(r'/a\.m3u8', u, re.I)
+                or re.search(r'f\d+-a\d+\.m3u8', u, re.I)   # f1-a1.m3u8 kimi
             ]
             pure_video = [u for u in video_urls if u not in audio_candidates]
         else:
