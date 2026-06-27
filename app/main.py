@@ -73,7 +73,7 @@ async def handle_hls_proxy(request: web.Request) -> web.Response:
             headers=CORS_HEADERS,
         )
 
-    base_url = str(request.url.origin())
+    base_url = (settings.webapp_base_url or str(request.url.origin())).rstrip("/")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -127,7 +127,9 @@ async def handle_player(request: web.Request) -> web.Response:
     """Telegram Mini App video player səhifəsi."""
     try:
         content = PLAYER_HTML.read_text(encoding="utf-8")
-        base_url = str(request.url.origin())
+        # settings.webapp_base_url istifadə edirik — Render reverse proxy arxasında
+        # request.url.origin() http://0.0.0.0:8000 qaytarır, bu yanlışdır.
+        base_url = (settings.webapp_base_url or str(request.url.origin())).rstrip("/")
         content = content.replace(
             "const BASE_URL = '';",
             f"const BASE_URL = '{base_url}';"
